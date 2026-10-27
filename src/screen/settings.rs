@@ -11,6 +11,8 @@ use iced::{Alignment, Length, Size, Task, Vector};
 use crate::widget::{Element, key_press};
 use crate::{Theme, font, open_url, theme, window};
 
+mod theme_browser;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
     Networks,
@@ -46,6 +48,8 @@ pub enum Message {
     Authentication(Authentication),
     ThemeMode(ThemeMode),
     Theme(String),
+    BrowseThemes,
+    Browser(theme_browser::Message),
     Light(String),
     Dark(String),
     Sidebar(String),
@@ -72,6 +76,8 @@ pub struct Settings {
     section: Section,
     selected: Option<usize>,
     themes: Vec<String>,
+    installed_themes: Vec<data::Theme>,
+    browser: Option<theme_browser::Browser>,
     saving: bool,
     pub status: Option<String>,
     error: Option<String>,
@@ -114,9 +120,9 @@ impl Settings {
             .ok()
             .filter(|draft| !draft.networks.is_empty())
             .map(|_| 0);
-        let mut themes = config
-            .appearance
-            .all
+        let installed_themes =
+            data::appearance::catalog::installed(&Config::themes_dir());
+        let mut themes = installed_themes
             .iter()
             .map(|theme| theme.name.clone())
             .collect::<Vec<_>>();
@@ -140,6 +146,8 @@ impl Settings {
                 section: Section::Networks,
                 selected,
                 themes,
+                installed_themes,
+                browser: None,
                 saving: false,
                 status: None,
                 error: None,
@@ -152,14 +160,12 @@ impl Settings {
         )
     }
 
-    pub fn preview_theme(&self, config: &Config, current: &Theme) -> Theme {
+    pub fn preview_theme(&self, _config: &Config, current: &Theme) -> Theme {
         let Ok(draft) = &self.draft else {
             return current.clone();
         };
         if draft.appearance.mode == ThemeMode::Single {
-            config
-                .appearance
-                .all
+            self.installed_themes
                 .iter()
                 .find(|theme| theme.name == draft.appearance.theme)
                 .cloned()
@@ -173,10 +179,67 @@ impl Settings {
         &mut self,
         message: Message,
     ) -> (Task<Message>, Option<Event>) {
-        if self.saving && !matches!(message, Message::Saved(_)) {
+        if self.saving
+            && !matches!(
+                message,
+                Message::Saved(_)
+                    | Message::Browser(
+                        theme_browser::Message::Loaded(_)
+                            | theme_browser::Message::Downloaded(_, _)
+                    )
+            )
+        {
             return (Task::none(), None);
         }
         match message {
+            Message::BrowseThemes => {
+                let mode = self
+                    .draft
+                    .as_ref()
+                    .map_or(ThemeMode::Single, |draft| draft.appearance.mode);
+                let (browser, task) =
+                    theme_browser::Browser::open(&self.installed_themes, mode);
+                self.browser = Some(browser);
+                return (task.map(Message::Browser), None);
+            }
+            Message::Browser(message) => {
+                let Some(browser) = &mut self.browser else {
+                    return (Task::none(), None);
+                };
+                let (task, event) = browser.update(message);
+                match event {
+                    Some(theme_browser::Event::Back) => self.browser = None,
+                    Some(theme_browser::Event::Installed(theme)) => {
+                        if !self.themes.contains(&theme.name) {
+                            self.themes.push(theme.name.clone());
+                            self.themes.sort_by_key(|name| name.to_lowercase());
+                        }
+                        self.installed_themes.push(theme);
+                    }
+                    Some(theme_browser::Event::Use(target, name)) => {
+                        if let Ok(draft) = &mut self.draft {
+                            match target {
+                                theme_browser::Target::Single => {
+                                    draft.appearance.mode = ThemeMode::Single;
+                                    draft.appearance.theme = name;
+                                }
+                                theme_browser::Target::Light => {
+                                    draft.appearance.light = name;
+                                }
+                                theme_browser::Target::Dark => {
+                                    draft.appearance.dark = name;
+                                }
+                            }
+                        }
+                        self.browser = None;
+                        self.status = None;
+                        self.error = None;
+                    }
+                    None => {}
+                }
+                return (task.map(Message::Browser), None);
+            }
+
             Message::Focus(previous) => {
                 return (
                     if previous {
@@ -242,6 +305,7 @@ impl Settings {
                 let _ = open_url::open(Config::path());
             }
             Message::Revert => {
+                self.browser = None;
                 self.draft = Draft::load();
                 self.selected = self
                     .draft
@@ -263,6 +327,7 @@ impl Settings {
                 match message {
                     Message::Section(section) => {
                         self.section = section;
+                        self.browser = None;
                         self.confirm_remove = false;
                     }
                     Message::Select(index) => {
@@ -413,9 +478,12 @@ impl Settings {
         let body: Element<_> = match &self.draft {
             Ok(draft) => match self.section {
                 Section::Networks => self.networks(draft),
-                Section::Appearance => scrollable(self.appearance(draft))
-                    .height(Length::Fill)
-                    .into(),
+                Section::Appearance => match &self.browser {
+                    Some(browser) => browser.view().map(Message::Browser),
+                    None => scrollable(self.appearance(draft))
+                        .height(Length::Fill)
+                        .into(),
+                },
             },
             Err(error) => column![
                 text("Settings could not be loaded")
@@ -498,7 +566,11 @@ impl Settings {
             content,
             key_press::Key::Named(key_press::Named::Escape),
             key_press::Modifiers::default(),
-            Message::Close,
+            if self.browser.is_some() {
+                Message::Browser(theme_browser::Message::Back)
+            } else {
+                Message::Close
+            },
         );
         crate::widget::on_key(content, |key, modifiers| {
             if key.as_ref() == key_press::Key::Named(key_press::Named::Tab) {
@@ -725,6 +797,8 @@ impl Settings {
                 form = form.push(text("Your theme configuration is managed in the config file. Choose a mode above to replace it.").style(theme::text::secondary));
             }
         }
+        form = form
+            .push(action("Browse and download themes", Message::BrowseThemes));
         form = form.push(text("One-theme selections preview in this window. Apply to use them throughout Halloy.").style(theme::text::secondary))
             .push(rule::horizontal(1))
             .push(text("Font").size(16).font(font::PRIMARY_BOLD.clone()))
@@ -743,7 +817,7 @@ impl Settings {
     }
 }
 
-fn action<'a>(label: &'a str, message: Message) -> Element<'a, Message> {
+fn action<'a, M: Clone + 'a>(label: &'a str, message: M) -> Element<'a, M> {
     button(text(label))
         .padding([8, 12])
         .style(|theme, status| theme::button::secondary(theme, status, false))
@@ -776,12 +850,7 @@ fn field<'a>(
     labelled(
         label,
         text_input(placeholder, value)
-            .style(|theme, status| {
-                let mut style = theme::text_input::primary(theme, status);
-                let primary = theme.styles().text.primary.color;
-                style.placeholder = style.placeholder.mix(primary, 0.4);
-                style
-            })
+            .style(input_style)
             .on_input(move |value| Message::Edit(field, value))
             .secure(secret)
             .padding(8)
@@ -797,4 +866,15 @@ fn labelled<'a>(
         .spacing(6)
         .width(Length::Fill)
         .into()
+}
+
+fn input_style(
+    theme: &Theme,
+    status: iced::widget::text_input::Status,
+) -> iced::widget::text_input::Style {
+    let mut style = theme::text_input::primary(theme, status);
+    style.placeholder = style
+        .placeholder
+        .mix(theme.styles().text.primary.color, 0.4);
+    style
 }

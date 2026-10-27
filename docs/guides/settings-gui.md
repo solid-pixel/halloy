@@ -27,8 +27,18 @@ Removing a network takes effect when you apply and disconnects that network.
 Choose an installed theme, or separate themes for light and dark system
 appearance. A single theme previews within Settings before applying. Existing
 randomized theme lists are shown as **Configured in file** and kept until you
-choose another theme mode. Install additional theme files in Halloy's `themes`
-directory before opening Settings.
+choose another theme mode.
+
+Select **Browse and download themes** to search the official Halloy gallery,
+filter light or dark themes, and preview sample chat messages. **Download theme**
+saves a theme into Halloy's `themes` directory and adds it to the switcher
+immediately. Existing files are kept. Choose **Use theme** to preview it in
+Settings, then **Apply** to use it throughout Halloy. With system appearance,
+choose **Use as light** or **Use as dark**.
+
+The gallery needs an internet connection. A failed request offers **Try again**
+and a link to the gallery website. Theme files installed manually are picked up
+when Settings is reopened.
 
 Font family, text size, and line height require an application restart after
 applying. Empty font fields use Halloy's defaults. Interface scale and sidebar

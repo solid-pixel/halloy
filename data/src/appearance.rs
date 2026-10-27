@@ -1,5 +1,6 @@
 pub use theme::Theme;
 
+pub mod catalog;
 pub mod theme;
 
 #[derive(Debug, Clone)]
