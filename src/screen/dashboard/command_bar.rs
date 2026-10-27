@@ -188,6 +188,7 @@ pub enum Buffer {
 
 #[derive(Debug, Clone)]
 pub enum Configuration {
+    OpenSettings,
     Reload,
     OpenConfigDirectory,
     OpenConfigFile,
@@ -368,6 +369,7 @@ impl Configuration {
             Configuration::OpenDataDirectory,
             Configuration::OpenCacheDirectory,
             Configuration::OpenWebsite,
+            Configuration::OpenSettings,
             Configuration::Reload,
         ]
     }
@@ -476,6 +478,7 @@ impl std::fmt::Display for Buffer {
 impl std::fmt::Display for Configuration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Configuration::OpenSettings => write!(f, "Open Settings"),
             Configuration::OpenConfigDirectory => {
                 write!(f, "Open config directory")
             }

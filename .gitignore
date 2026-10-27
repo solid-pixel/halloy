@@ -31,3 +31,6 @@
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 profile.json.gz
+
+# Local visual verification captures
+/.impeccable/review/

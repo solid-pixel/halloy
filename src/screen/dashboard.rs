@@ -100,6 +100,7 @@ pub enum Message {
 
 #[derive(Debug)]
 pub enum Event {
+    OpenSettings,
     ConfigReloaded(Result<Config, config::Error>),
     ReloadThemes,
     QuitServer(Server, Option<String>),
@@ -693,6 +694,9 @@ impl Dashboard {
                     sidebar::Event::OpenReleaseWebsite => {
                         let _ = open_url::open(RELEASE_WEBSITE);
                         (Task::none(), None)
+                    }
+                    sidebar::Event::OpenSettings => {
+                        (Task::none(), Some(Event::OpenSettings))
                     }
                     sidebar::Event::ToggleThemeEditor => {
                         (self.toggle_theme_editor(main_window, config), None)
@@ -2843,6 +2847,7 @@ impl Dashboard {
         use event::Event::*;
 
         match event {
+            event::Event::OpenSettings => Task::none(),
             Escape => {
                 if let Some((window, pane, state)) = self.get_focused() {
                     // A focus menu swallows Escape to close itself, leaving
@@ -3082,6 +3087,9 @@ impl Dashboard {
                 }
             },
             command_bar::Command::Configuration(command) => match command {
+                command_bar::Configuration::OpenSettings => {
+                    (Task::none(), Some(Event::OpenSettings))
+                }
                 command_bar::Configuration::OpenConfigDirectory => {
                     let _ = open_url::open(Config::config_dir());
                     (Task::none(), None)
@@ -4861,6 +4869,23 @@ impl Dashboard {
             .any(|(open_server, open_channel)| {
                 *open_server == server && *open_channel == channel
             })
+    }
+
+    pub fn has_unsaved_config_changes(&self) -> bool {
+        self.panes.iter().any(|(_, _, pane)| matches!(&pane.buffer, Buffer::ConfigEditor(editor) if editor.has_unsaved_changes()))
+    }
+
+    pub fn refresh_config_editor(&mut self) {
+        for (_, _, pane) in self.panes.iter_mut() {
+            if let Buffer::ConfigEditor(editor) = &mut pane.buffer
+                && !editor.has_unsaved_changes()
+            {
+                let _ = editor.update(
+                    buffer::config_editor::Message::Refresh,
+                    &Config::default(),
+                );
+            }
+        }
     }
 
     fn save_config_editor(

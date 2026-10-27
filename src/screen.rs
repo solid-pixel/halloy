@@ -1,5 +1,6 @@
 pub mod dashboard;
 pub mod help;
+pub mod settings;
 pub mod welcome;
 
 pub use dashboard::Dashboard;

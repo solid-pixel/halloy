@@ -45,6 +45,7 @@ pub enum Message {
     CloseAllQueries(Server, Vec<target::Query>),
     ToggleCommandBar,
     ToggleThemeEditor,
+    OpenSettings,
     ReloadConfigFile,
     OpenReleaseWebsite,
     OpenAbout {
@@ -78,6 +79,7 @@ pub enum Event {
     CloseAllQueries(Server, Vec<target::Query>),
     ToggleCommandBar,
     ToggleThemeEditor,
+    OpenSettings,
     OpenReleaseWebsite,
     OpenAbout {
         version: String,
@@ -463,6 +465,7 @@ impl Sidebar {
             Message::ToggleCommandBar => {
                 (Task::none(), Some(Event::ToggleCommandBar))
             }
+            Message::OpenSettings => (Task::none(), Some(Event::OpenSettings)),
             Message::ToggleThemeEditor => {
                 (Task::none(), Some(Event::ToggleThemeEditor))
             }
@@ -798,6 +801,12 @@ impl Sidebar {
                             None,
                             icon::documentation(),
                             Message::OpenDocumentation,
+                        ),
+                        Menu::Settings => context_button(
+                            text("Settings"),
+                            None,
+                            icon::config(),
+                            Message::OpenSettings,
                         ),
                         Menu::ConfigEditor => context_button(
                             text("Config Editor"),
@@ -1224,6 +1233,7 @@ impl InternalBufferSidebarData {
 enum Menu {
     RefreshConfig,
     ConfigEditor,
+    Settings,
     CommandBar,
     Search,
     ThemeEditor,
@@ -1291,6 +1301,7 @@ impl Menu {
         }
 
         list.extend([
+            Self::Settings,
             Self::ConfigEditor,
             Self::RefreshConfig,
             Self::ThemeEditor,

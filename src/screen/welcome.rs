@@ -9,6 +9,7 @@ use crate::{Theme, font, open_url, theme};
 #[derive(Debug, Clone)]
 pub enum Message {
     RefreshConfiguration,
+    OpenSettings,
     OpenConfigurationDirectory,
     OpenWikiWebsite,
 }
@@ -16,6 +17,7 @@ pub enum Message {
 #[derive(Debug, Clone)]
 pub enum Event {
     RefreshConfiguration,
+    OpenSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +38,7 @@ impl Welcome {
 
     pub fn update(&mut self, message: Message) -> Option<Event> {
         match message {
+            Message::OpenSettings => Some(Event::OpenSettings),
             Message::RefreshConfiguration => Some(Event::RefreshConfiguration),
             Message::OpenConfigurationDirectory => {
                 let _ = open_url::open(Config::config_dir());
@@ -89,7 +92,7 @@ impl Welcome {
             .push(space::vertical().height(10))
             .push(text("Welcome to Halloy!").font(font::PRIMARY_BOLD.clone()))
             .push(space::vertical().height(4))
-            .push(text("Halloy is configured through a config file."))
+            .push(text("Set up your networks and appearance in Settings."))
             .push(row![
                 text("You can find the "),
                 text("config.toml").style(theme::text::action).font_maybe(
@@ -106,6 +109,12 @@ impl Welcome {
                 column![]
                     .width(250)
                     .spacing(4)
+                    .push(
+                        button("Open Settings")
+                            .padding(8)
+                            .width(Length::Fill)
+                            .on_press(Message::OpenSettings),
+                    )
                     .push(documentation_button)
                     .push(reload_button),
             )

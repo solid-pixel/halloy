@@ -1,5 +1,8 @@
 # Configuration
 
+In this fork, **Settings** provides graphical editing for Networks and Appearance.
+See the [Settings GUI guide](./guides/settings-gui.md).
+
 Halloy uses a TOML file for configuration called `config.toml`.  The specification for the configuration file format ([TOML](https://toml.io/)) can be found at [https://toml.io/](https://toml.io/).
 
 A default file is created in the [configuration directory](#directory) when you launch Halloy for the first time.

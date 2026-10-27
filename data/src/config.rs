@@ -67,6 +67,7 @@ pub mod preview;
 pub mod proxy;
 pub mod runtime;
 pub mod server;
+pub mod settings;
 pub mod sidebar;
 pub mod window;
 
@@ -353,6 +354,159 @@ where
     Ok(Some(deserialize_font_weight_from_string(deserializer)?))
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum ThemeKeys {
+    Static(ThemeValue),
+    Dynamic { light: ThemeValue, dark: ThemeValue },
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+enum ThemeValue {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl ThemeValue {
+    fn to_vec(&self) -> Vec<String> {
+        match self {
+            ThemeValue::Single(s) => vec![s.clone()],
+            ThemeValue::Multiple(v) => v.clone(),
+        }
+    }
+}
+
+impl Default for ThemeKeys {
+    fn default() -> Self {
+        Self::Static(ThemeValue::Single(String::default()))
+    }
+}
+
+impl ThemeKeys {
+    pub fn keys(&self) -> (String, Option<String>) {
+        use rand::prelude::*;
+        use rand_chacha::ChaCha8Rng;
+
+        let mut rng = ChaCha8Rng::from_rng(&mut rand::rng());
+
+        match self {
+            ThemeKeys::Static(theme_value) => {
+                let themes = theme_value.to_vec();
+
+                if themes.is_empty() {
+                    (String::default(), None)
+                } else {
+                    let selected =
+                        themes.choose(&mut rng).unwrap_or(&themes[0]);
+                    (selected.clone(), None)
+                }
+            }
+            ThemeKeys::Dynamic { light, dark } => {
+                let light_themes = light.to_vec();
+                let dark_themes = dark.to_vec();
+
+                let light_selected = if light_themes.is_empty() {
+                    String::default()
+                } else {
+                    light_themes
+                        .choose(&mut rng)
+                        .unwrap_or(&light_themes[0])
+                        .clone()
+                };
+
+                let dark_selected = if dark_themes.is_empty() {
+                    None
+                } else {
+                    Some(
+                        dark_themes
+                            .choose(&mut rng)
+                            .unwrap_or(&dark_themes[0])
+                            .clone(),
+                    )
+                };
+
+                (light_selected, dark_selected)
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+struct Configuration {
+    pub theme: ThemeKeys,
+    pub servers: IndexMap<ServerName, Server>,
+    pub context_menu: ContextMenu,
+    pub proxy: Option<Proxy>,
+    pub font: Font,
+    pub scale_factor: ScaleFactor,
+    pub buffer: Buffer,
+    pub channel_monitor: ChannelMonitor,
+    pub pane: Pane,
+    pub sidebar: Sidebar,
+    pub keyboard: Keyboard,
+    pub notifications: Notifications,
+    pub file_transfer: FileTransfer,
+    pub filehost: Filehost,
+    pub tooltips: Tooltips,
+    pub window: Window,
+    pub preview: Preview,
+    pub highlights: Highlights,
+    pub actions: Actions,
+    pub ctcp: Ctcp,
+    pub display: Display,
+    pub logs: Logs,
+    pub platform_specific: PlatformSpecific,
+    pub runtime: Runtime,
+    pub check_for_update_on_launch: bool,
+    pub metadata: Metadata,
+    pub config_editor: ConfigEditor,
+}
+
+impl Default for Configuration {
+    fn default() -> Self {
+        Self {
+            theme: ThemeKeys::default(),
+            servers: IndexMap::<ServerName, Server>::default(),
+            context_menu: ContextMenu::default(),
+            proxy: None,
+            font: Font::default(),
+            scale_factor: ScaleFactor::default(),
+            buffer: Buffer::default(),
+            channel_monitor: ChannelMonitor::default(),
+            pane: Pane::default(),
+            sidebar: Sidebar::default(),
+            keyboard: Keyboard::default(),
+            notifications: Notifications::default(),
+            file_transfer: FileTransfer::default(),
+            filehost: Filehost::default(),
+            tooltips: Tooltips::default(),
+            window: Window::default(),
+            preview: Preview::default(),
+            highlights: Highlights::default(),
+            actions: Actions::default(),
+            ctcp: Ctcp::default(),
+            display: Display::default(),
+            logs: Logs::default(),
+            platform_specific: PlatformSpecific::default(),
+            runtime: Runtime::default(),
+            check_for_update_on_launch: true,
+            metadata: Metadata::default(),
+            config_editor: ConfigEditor::default(),
+        }
+    }
+}
+
+fn parse_configuration(content: &str) -> Result<Configuration, Error> {
+    let deserializer = toml::Deserializer::parse(content)
+        .map_err(|error| Error::Parse(ParseError::new(content, &error)))?;
+    serde_ignored::deserialize(deserializer, |ignored| {
+        log::warn!("[config.toml] Ignoring unknown setting: {ignored}");
+    })
+    .map_err(|error| Error::Parse(ParseError::new(content, &error)))
+}
+
 impl Config {
     pub fn config_dir() -> PathBuf {
         let dir = environment::config_dir();
@@ -391,152 +545,13 @@ impl Config {
         Self::config_dir().join(environment::CONFIG_FILE_NAME)
     }
 
+    /// Validate configuration without executing commands or reading credentials.
+    pub fn validate(content: &str) -> Result<(), Error> {
+        parse_configuration(content)?.keyboard.validate()
+    }
+
     pub async fn load() -> Result<Self, Error> {
         use tokio::fs;
-
-        #[derive(Deserialize, Debug)]
-        #[serde(untagged)]
-        pub enum ThemeKeys {
-            Static(ThemeValue),
-            Dynamic { light: ThemeValue, dark: ThemeValue },
-        }
-
-        #[derive(Deserialize, Debug, Clone)]
-        #[serde(untagged)]
-        enum ThemeValue {
-            Single(String),
-            Multiple(Vec<String>),
-        }
-
-        impl ThemeValue {
-            fn to_vec(&self) -> Vec<String> {
-                match self {
-                    ThemeValue::Single(s) => vec![s.clone()],
-                    ThemeValue::Multiple(v) => v.clone(),
-                }
-            }
-        }
-
-        impl Default for ThemeKeys {
-            fn default() -> Self {
-                Self::Static(ThemeValue::Single(String::default()))
-            }
-        }
-
-        impl ThemeKeys {
-            pub fn keys(&self) -> (String, Option<String>) {
-                use rand::prelude::*;
-                use rand_chacha::ChaCha8Rng;
-
-                let mut rng = ChaCha8Rng::from_rng(&mut rand::rng());
-
-                match self {
-                    ThemeKeys::Static(theme_value) => {
-                        let themes = theme_value.to_vec();
-
-                        if themes.is_empty() {
-                            (String::default(), None)
-                        } else {
-                            let selected =
-                                themes.choose(&mut rng).unwrap_or(&themes[0]);
-                            (selected.clone(), None)
-                        }
-                    }
-                    ThemeKeys::Dynamic { light, dark } => {
-                        let light_themes = light.to_vec();
-                        let dark_themes = dark.to_vec();
-
-                        let light_selected = if light_themes.is_empty() {
-                            String::default()
-                        } else {
-                            light_themes
-                                .choose(&mut rng)
-                                .unwrap_or(&light_themes[0])
-                                .clone()
-                        };
-
-                        let dark_selected = if dark_themes.is_empty() {
-                            None
-                        } else {
-                            Some(
-                                dark_themes
-                                    .choose(&mut rng)
-                                    .unwrap_or(&dark_themes[0])
-                                    .clone(),
-                            )
-                        };
-
-                        (light_selected, dark_selected)
-                    }
-                }
-            }
-        }
-
-        #[derive(Deserialize)]
-        #[serde(default)]
-        pub struct Configuration {
-            pub theme: ThemeKeys,
-            pub servers: IndexMap<ServerName, Server>,
-            pub context_menu: ContextMenu,
-            pub proxy: Option<Proxy>,
-            pub font: Font,
-            pub scale_factor: ScaleFactor,
-            pub buffer: Buffer,
-            pub channel_monitor: ChannelMonitor,
-            pub pane: Pane,
-            pub sidebar: Sidebar,
-            pub keyboard: Keyboard,
-            pub notifications: Notifications,
-            pub file_transfer: FileTransfer,
-            pub filehost: Filehost,
-            pub tooltips: Tooltips,
-            pub window: Window,
-            pub preview: Preview,
-            pub highlights: Highlights,
-            pub actions: Actions,
-            pub ctcp: Ctcp,
-            pub display: Display,
-            pub logs: Logs,
-            pub platform_specific: PlatformSpecific,
-            pub runtime: Runtime,
-            pub check_for_update_on_launch: bool,
-            pub metadata: Metadata,
-            pub config_editor: ConfigEditor,
-        }
-
-        impl Default for Configuration {
-            fn default() -> Self {
-                Self {
-                    theme: ThemeKeys::default(),
-                    servers: IndexMap::<ServerName, Server>::default(),
-                    context_menu: ContextMenu::default(),
-                    proxy: None,
-                    font: Font::default(),
-                    scale_factor: ScaleFactor::default(),
-                    buffer: Buffer::default(),
-                    channel_monitor: ChannelMonitor::default(),
-                    pane: Pane::default(),
-                    sidebar: Sidebar::default(),
-                    keyboard: Keyboard::default(),
-                    notifications: Notifications::default(),
-                    file_transfer: FileTransfer::default(),
-                    filehost: Filehost::default(),
-                    tooltips: Tooltips::default(),
-                    window: Window::default(),
-                    preview: Preview::default(),
-                    highlights: Highlights::default(),
-                    actions: Actions::default(),
-                    ctcp: Ctcp::default(),
-                    display: Display::default(),
-                    logs: Logs::default(),
-                    platform_specific: PlatformSpecific::default(),
-                    runtime: Runtime::default(),
-                    check_for_update_on_launch: true,
-                    metadata: Metadata::default(),
-                    config_editor: ConfigEditor::default(),
-                }
-            }
-        }
 
         let path = Self::path();
         if !path
@@ -548,9 +563,6 @@ impl Config {
         let content = fs::read_to_string(path)
             .await
             .map_err(|e| Error::LoadConfigFile(e.to_string()))?;
-
-        let config = toml::Deserializer::parse(content.as_ref())
-            .map_err(|e| Error::Parse(ParseError::new(&content, &e)))?;
 
         let Configuration {
             theme,
@@ -580,10 +592,7 @@ impl Config {
             check_for_update_on_launch,
             metadata,
             config_editor,
-        } = serde_ignored::deserialize(config, |ignored| {
-            log::warn!("[config.toml] Ignoring unknown setting: {ignored}");
-        })
-        .map_err(|e| Error::Parse(ParseError::new(&content, &e)))?;
+        } = parse_configuration(&content)?;
 
         keyboard.validate()?;
 

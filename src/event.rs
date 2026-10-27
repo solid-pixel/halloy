@@ -3,6 +3,7 @@ use iced::{Subscription, event, keyboard, mouse, window};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
+    OpenSettings,
     Copy,
     Escape,
     LeftClick,
@@ -24,6 +25,13 @@ fn filtered_events(
     let ignored = |status| matches!(status, iced::event::Status::Ignored);
 
     let recognized = match &event {
+        iced::Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Character(key),
+            modifiers,
+            ..
+        }) if key.as_str() == "," && modifiers.command() => {
+            Some(Event::OpenSettings)
+        }
         iced::Event::Keyboard(keyboard::Event::KeyPressed {
             key: keyboard::Key::Named(keyboard::key::Named::Escape),
             ..

@@ -47,7 +47,7 @@ use hashbrown::HashSet;
 use iced::widget::text::LineHeight;
 use iced::widget::{column, container};
 use iced::{Length, Subscription, Task, padding};
-use screen::{dashboard, help, welcome};
+use screen::{dashboard, help, settings, welcome};
 use tokio_stream::wrappers::ReceiverStream;
 
 use self::event::{Event, events};
@@ -262,6 +262,7 @@ struct Halloy {
     pending_logs: Vec<data::log::Record>,
     notifications: Notifications,
     power: system::State,
+    settings_window: Option<settings::Settings>,
 }
 
 impl Halloy {
@@ -417,6 +418,7 @@ impl Halloy {
                 pending_logs: vec![],
                 notifications,
                 power: system::State::default(),
+                settings_window: None,
             },
             commands,
         )
@@ -462,6 +464,8 @@ impl Screen {
 
 #[derive(Debug)]
 pub enum Message {
+    Settings(settings::Message),
+    SettingsReloaded(Result<Config, config::Error>),
     AppearanceReloaded(data::appearance::Appearance),
     ScreenConfigReloaded(Result<Config, config::Error>),
     Dashboard(dashboard::Message),
@@ -618,6 +622,13 @@ impl Halloy {
     }
 
     fn title(&self, window_id: window::Id) -> String {
+        if self
+            .settings_window
+            .as_ref()
+            .is_some_and(|settings| settings.window == window_id)
+        {
+            return "Settings – Halloy".into();
+        }
         let default = "Halloy".to_owned();
         let s = match &self.screen {
             Screen::Dashboard(dashboard) => {
@@ -640,6 +651,61 @@ impl Halloy {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Settings(message) => {
+                if matches!(message, settings::Message::Apply)
+                    && let Screen::Dashboard(dashboard) = &self.screen
+                    && dashboard.has_unsaved_config_changes()
+                {
+                    if let Some(settings) = &mut self.settings_window {
+                        settings.application_failed("Save or revert your changes in Config Editor before applying Settings.".into());
+                    }
+                    return Task::none();
+                }
+                let Some(settings) = &mut self.settings_window else {
+                    return Task::none();
+                };
+                let (task, event) = settings.update(message);
+                let task = task.map(Message::Settings);
+                match event {
+                    Some(settings::Event::Quit) => {
+                        let id = settings.window;
+                        self.settings_window = None;
+                        Task::batch([task, window::close(id), self.exit()])
+                    }
+                    Some(settings::Event::Close) => {
+                        let id = settings.window;
+                        self.settings_window = None;
+                        Task::batch([task, window::close(id)])
+                    }
+                    Some(settings::Event::Saved) => Task::batch([
+                        task,
+                        Task::perform(
+                            Config::load(),
+                            Message::SettingsReloaded,
+                        ),
+                    ]),
+                    None => task,
+                }
+            }
+            Message::SettingsReloaded(result) => match result {
+                Ok(config) => {
+                    if let Some(settings) = &mut self.settings_window {
+                        settings.application_succeeded();
+                    }
+                    if let Screen::Dashboard(dashboard) = &mut self.screen {
+                        dashboard.refresh_config_editor();
+                        self.config_file_reloaded(Ok(config))
+                    } else {
+                        Task::done(Message::ScreenConfigReloaded(Ok(config)))
+                    }
+                }
+                Err(error) => {
+                    if let Some(settings) = &mut self.settings_window {
+                        settings.application_failed(format!("Saved, but Halloy could not apply the settings: {error}"));
+                    }
+                    Task::none()
+                }
+            },
             Message::ConfigReloaded(config) => {
                 self.config_file_reloaded(config)
             }
@@ -692,6 +758,7 @@ impl Halloy {
                     self.current_mode,
                 );
                 halloy.main_window = saved_window;
+                halloy.settings_window = self.settings_window.take();
                 *self = halloy;
 
                 let mut tasks = vec![command];
@@ -746,6 +813,9 @@ impl Halloy {
                 );
 
                 let event_task = match event {
+                    Some(dashboard::Event::OpenSettings) => {
+                        self.open_settings()
+                    }
                     Some(dashboard::Event::ToggleFullscreen) => {
                         self.main_window.toggle_fullscreen();
                         self.save_main_window_settings()
@@ -901,6 +971,7 @@ impl Halloy {
                 };
 
                 match welcome.update(message) {
+                    Some(welcome::Event::OpenSettings) => self.open_settings(),
                     Some(welcome::Event::RefreshConfiguration) => {
                         Task::perform(
                             Config::load(),
@@ -1169,6 +1240,16 @@ impl Halloy {
                 }
             },
             Message::Event(window, event) => {
+                if event == Event::OpenSettings {
+                    return self.open_settings();
+                }
+                if self
+                    .settings_window
+                    .as_ref()
+                    .is_some_and(|settings| settings.window == window)
+                {
+                    return Task::none();
+                }
                 if let Screen::Dashboard(dashboard) = &mut self.screen {
                     return dashboard
                         .handle_event(
@@ -1326,6 +1407,16 @@ impl Halloy {
                 Task::none()
             }
             Message::Window(id, event) => {
+                if self
+                    .settings_window
+                    .as_ref()
+                    .is_some_and(|settings| settings.window == id)
+                    && matches!(event, window::Event::CloseRequested)
+                {
+                    return self
+                        .update(Message::Settings(settings::Message::Close));
+                }
+
                 if matches!(event, window::Event::CloseRequested)
                     && matches!(&self.modal, Some(Modal::ImagePreview { window, .. }) if *window == id)
                 {
@@ -1748,6 +1839,12 @@ impl Halloy {
         let platform_specific_padding =
             platform_specific::content_padding(&self.config);
 
+        if let Some(settings) = &self.settings_window
+            && settings.window == id
+        {
+            return settings.view().map(Message::Settings);
+        }
+
         // Main window.
         if id == self.main_window.id {
             let screen = match &self.screen {
@@ -1839,11 +1936,24 @@ impl Halloy {
         }
     }
 
-    fn theme(&self, _window: window::Id) -> Theme {
+    fn theme(&self, window: window::Id) -> Theme {
+        if let Some(settings) = &self.settings_window
+            && settings.window == window
+        {
+            return settings.preview_theme(&self.config, &self.theme);
+        }
         self.theme.clone()
     }
 
-    fn scale_factor(&self, _window: window::Id) -> f32 {
+    fn scale_factor(&self, window: window::Id) -> f32 {
+        // Keep the scale control reachable even when chat windows are zoomed.
+        if self
+            .settings_window
+            .as_ref()
+            .is_some_and(|settings| settings.window == window)
+        {
+            return 1.0;
+        }
         f32::from(self.config.scale_factor)
     }
 
@@ -1895,6 +2005,16 @@ impl Halloy {
         }
 
         Subscription::batch(subscriptions)
+    }
+
+    fn open_settings(&mut self) -> Task<Message> {
+        if let Some(settings) = &self.settings_window {
+            return window::gain_focus(settings.window);
+        }
+        let (settings, task) =
+            settings::Settings::open(&self.main_window, &self.config);
+        self.settings_window = Some(settings);
+        task.discard()
     }
 
     fn config_file_reloaded(
@@ -2100,6 +2220,9 @@ impl Halloy {
     }
 
     fn exit(&mut self) -> Task<Message> {
+        if self.settings_window.is_some() {
+            return self.update(Message::Settings(settings::Message::Quit));
+        }
         if let Screen::Exit { .. } = &self.screen {
             // Already exiting.
             return Task::none();
