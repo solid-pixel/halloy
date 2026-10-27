@@ -118,4 +118,7 @@ and set `HALLOY_PORTABLE_DIR` to its absolute path when running. Place a test
 connections are desired.
 
 Settings keeps the selected palette while improving text contrast, field and
-button outlines, and focus visibility. Chat windows show the supplied theme colors.
+button outlines, and focus visibility. Inputs and pickers have visible fills
+against their panes; picker menus and unchecked boxes use the same control fill.
+Selected tabs and groups have stronger backgrounds. Chat windows show the
+supplied theme colors.

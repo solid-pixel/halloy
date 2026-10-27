@@ -31,6 +31,34 @@ fn contrast(color: Color, background: Color, minimum: f32) -> Color {
         .unwrap_or(target)
 }
 
+// Contrast between surfaces is deliberately gentler than text contrast, but
+// still visible when a theme supplies identical window and input backgrounds.
+fn surface(background: Color, foreground: Color, minimum: f32) -> Color {
+    (0..=100)
+        .map(|step| background.mix(foreground, step as f32 / 100.0))
+        .find(|candidate| candidate.relative_contrast(background) >= minimum)
+        .unwrap_or_else(|| contrast(foreground, background, minimum))
+}
+
+fn pane_background(theme: &Theme) -> Color {
+    surface(
+        theme.styles().general.background,
+        theme.styles().text.primary.color,
+        1.06,
+    )
+}
+
+fn control_background(theme: &Theme, hovered: bool) -> Color {
+    let pane = pane_background(theme);
+    let minimum = if hovered { 1.22 } else { 1.16 };
+    let supplied = opaque(theme.styles().buffer.background_text_input, pane);
+    if supplied.relative_contrast(pane) >= minimum {
+        supplied
+    } else {
+        surface(pane, theme.styles().text.primary.color, minimum)
+    }
+}
+
 pub fn accessible_theme(theme: &Theme) -> Theme {
     let mut theme = theme.clone();
     let data = match &mut theme {
@@ -50,7 +78,7 @@ pub fn accessible_theme(theme: &Theme) -> Theme {
     }
     styles.text.primary.color =
         contrast(styles.text.primary.color, background, 7.0);
-    let pane_background = background.mix(styles.text.primary.color, 0.025);
+    let pane_background = surface(background, styles.text.primary.color, 1.06);
     for color in [
         &mut styles.text.secondary.color,
         &mut styles.text.tertiary.color,
@@ -96,19 +124,28 @@ fn border(theme: &Theme, focused: bool) -> Border {
 
 fn border_on(theme: &Theme, background: Color, focused: bool) -> Border {
     let mut border = border(theme, focused);
-    border.color =
-        contrast(border.color, background, if focused { 4.5 } else { 3.0 });
+    let outside = pane_background(theme);
+    let minimum = if focused { 4.5 } else { 3.0 };
+    border.color = (0..=100)
+        .flat_map(|step| {
+            [Color::BLACK, Color::WHITE]
+                .map(|target| border.color.mix(target, step as f32 / 100.0))
+        })
+        .find(|candidate| {
+            candidate.relative_contrast(background) >= 3.0
+                && candidate.relative_contrast(outside) >= minimum
+                && candidate
+                    .relative_contrast(theme.styles().general.background)
+                    >= minimum
+        })
+        .unwrap_or_else(|| contrast(border.color, background, 3.0));
     border
 }
 
 pub fn input(theme: &Theme, status: text_input::Status) -> text_input::Style {
-    let background = fill(
+    let background = control_background(
         theme,
-        if matches!(status, text_input::Status::Hovered) {
-            0.07
-        } else {
-            0.04
-        },
+        matches!(status, text_input::Status::Hovered),
     );
     text_input::Style {
         background: background.into(),
@@ -131,17 +168,13 @@ pub fn pick_list(
     theme: &Theme,
     status: pick_list_widget::Status,
 ) -> pick_list_widget::Style {
-    let background = fill(
+    let background = control_background(
         theme,
-        if matches!(
+        !matches!(
             status,
             pick_list_widget::Status::Active
                 | pick_list_widget::Status::Disabled
-        ) {
-            0.04
-        } else {
-            0.07
-        },
+        ),
     );
     pick_list_widget::Style {
         background: background.into(),
@@ -169,12 +202,16 @@ pub fn pick_list(
 }
 
 pub fn menu(theme: &Theme) -> menu::Style {
-    let background = theme.styles().general.background;
-    let selected = fill(theme, 0.12);
+    let background = control_background(theme, false);
+    let selected = surface(background, theme.styles().text.primary.color, 1.3);
     menu::Style {
         background: background.into(),
-        border: border(theme, false),
-        text_color: theme.styles().text.primary.color,
+        border: border_on(theme, background, false),
+        text_color: contrast(
+            theme.styles().text.primary.color,
+            background,
+            4.5,
+        ),
         selected_background: selected.into(),
         selected_text_color: contrast(
             theme.styles().text.primary.color,
@@ -256,10 +293,11 @@ pub fn primary_button(
 }
 
 pub fn pane(theme: &Theme) -> iced::widget::container::Style {
+    let background = pane_background(theme);
     iced::widget::container::Style {
-        background: Some(fill(theme, 0.025).into()),
+        background: Some(background.into()),
         border: Border {
-            color: fill(theme, 0.18),
+            color: contrast(fill(theme, 0.24), background, 1.5),
             width: 1.0,
             radius: 4.0.into(),
         },
@@ -272,14 +310,15 @@ pub fn section_tab(
     status: button_widget::Status,
     selected: bool,
 ) -> button_widget::Style {
-    let background = fill(
-        theme,
+    let background = surface(
+        theme.styles().general.background,
+        theme.styles().text.primary.color,
         if status == button_widget::Status::Hovered {
-            0.07
+            1.16
         } else if selected {
-            0.025
+            1.12
         } else {
-            0.0
+            1.0
         },
     );
     button_widget::Style {
@@ -324,14 +363,15 @@ pub fn tab(
     status: button_widget::Status,
     selected: bool,
 ) -> button_widget::Style {
-    let background = fill(
-        theme,
+    let background = surface(
+        pane_background(theme),
+        theme.styles().text.primary.color,
         if selected {
-            0.14
+            1.3
         } else if status == button_widget::Status::Hovered {
-            0.07
+            1.16
         } else {
-            0.0
+            1.0
         },
     );
     button_widget::Style {
@@ -343,7 +383,7 @@ pub fn tab(
         ),
         border: Border {
             color: if selected {
-                theme.styles().general.border
+                border_on(theme, background, false).color
             } else {
                 Color::TRANSPARENT
             },
@@ -369,11 +409,11 @@ pub fn checkbox(
             3.0,
         )
     } else {
-        fill(theme, 0.04)
+        control_background(theme, false)
     };
     checkbox_widget::Style {
         background: background.into(),
-        border: border(theme, false),
+        border: border_on(theme, background, false),
         icon_color: contrast(
             theme.styles().general.background,
             background,
@@ -399,7 +439,11 @@ mod tests {
     #[test]
     fn settings_controls_remain_readable_with_low_contrast_light_and_dark_palettes()
      {
-        for background in [Color::WHITE, Color::from_rgb(0.06, 0.12, 0.15)] {
+        for background in [
+            Color::WHITE,
+            Color::from_rgb(0.06, 0.12, 0.15),
+            Color::from_rgb(0.5, 0.5, 0.5),
+        ] {
             let mut styles = data::appearance::theme::Styles::default();
             styles.general.background = background;
             styles.general.border = background;
@@ -412,6 +456,8 @@ mod tests {
             let original =
                 Theme::from(data::Theme::new("Low contrast".into(), styles));
             let adjusted = accessible_theme(&original);
+            let pane = pane_background(&adjusted);
+            assert!(pane.relative_contrast(background) >= 1.06);
             assert_eq!(original.styles().text.primary.color, background);
             for color in [
                 adjusted.styles().text.primary.color,
@@ -426,6 +472,7 @@ mod tests {
             };
             assert!(input_style.value.relative_contrast(surface) >= 4.5);
             assert!(input_style.placeholder.relative_contrast(surface) >= 4.5);
+            assert!(surface.relative_contrast(pane) >= 1.16);
             assert!(input_style.border.color.relative_contrast(surface) >= 3.0);
             assert!(
                 input_style.border.color.relative_contrast(background) >= 3.0
@@ -445,6 +492,25 @@ mod tests {
                 .width,
                 2.0
             );
+            let selected = tab(&adjusted, button_widget::Status::Active, true);
+            let Some(Background::Color(surface)) = selected.background else {
+                panic!("solid selected group surface");
+            };
+            assert!(surface.relative_contrast(pane) >= 1.3);
+            assert!(selected.text_color.relative_contrast(surface) >= 4.5);
+            for status in [
+                pick_list_widget::Status::Active,
+                pick_list_widget::Status::Hovered,
+                pick_list_widget::Status::Opened { is_hovered: false },
+            ] {
+                let picker = pick_list(&adjusted, status);
+                let Background::Color(surface) = picker.background else {
+                    panic!("solid picker surface");
+                };
+                assert!(surface.relative_contrast(pane) >= 1.16);
+                assert!(picker.text_color.relative_contrast(surface) >= 4.5);
+                assert!(picker.border.color.relative_contrast(surface) >= 3.0);
+            }
         }
     }
 }

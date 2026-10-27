@@ -42,12 +42,15 @@ Extend the existing implementation and `assets/screenshot.png`:
 `src/appearance/theme.rs`, its theme modules, `src/widget/pick_list.rs`, and the
 existing native theme editor define fonts, colors, controls, and window behavior.
 Use Halloy’s configured font and palette, flat surfaces, compact labels, and
-plain controls. Settings derives readable text, visible control borders, and
-clear focus states from the chosen palette. These adjustments are local to
-Settings; the chat preview uses the theme as supplied. The Settings surface
+plain controls. Settings derives readable text, visibly filled inputs and
+pickers, visible control borders, and clear focus states from the chosen
+palette. Picker menus and unchecked boxes use the same control fill. These
+adjustments are local to Settings; the chat preview uses the theme as supplied.
+The Settings surface
 operates as a tool: clear forms, independent scrolling, explicit states, and a
-persistent action footer. Compact tabs switch settings areas; faint pane
-backgrounds and borders group content, and Appearance fills the available width.
+persistent action footer. Compact underlined tabs switch settings areas; pane
+backgrounds and borders group content, selected groups have a stronger fill,
+and Appearance fills the available width.
 Navigation, Chat display, and Sidebar use a compact group list alongside the form.
 
 No change to Halloy’s brand, chat layout, IRC engine, or configuration format is
