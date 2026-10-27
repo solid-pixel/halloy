@@ -1836,6 +1836,7 @@ impl Halloy {
     }
 
     fn view(&self, id: window::Id) -> Element<'_, Message> {
+        let theme = self.preview_theme();
         let platform_specific_padding =
             platform_specific::content_padding(&self.config);
 
@@ -1855,14 +1856,14 @@ impl Halloy {
                         &self.version,
                         FilterChain::borrow(self.storage.get_filters()),
                         &self.config,
-                        &self.theme,
+                        theme,
                     )
                     .map(Message::Dashboard),
                 Screen::Help(help) => {
-                    help.view(&self.config.font, &self.theme).map(Message::Help)
+                    help.view(&self.config.font, theme).map(Message::Help)
                 }
                 Screen::Welcome(welcome) => {
-                    welcome.view(&self.theme).map(Message::Welcome)
+                    welcome.view(theme).map(Message::Welcome)
                 }
                 Screen::Exit { .. } => column![].into(),
             };
@@ -1885,9 +1886,7 @@ impl Halloy {
                         || modal.window_id().is_none()
                 })
                 .map(|modal| {
-                    modal
-                        .view(&self.config.font, &self.theme)
-                        .map(Message::Modal)
+                    modal.view(&self.config.font, theme).map(Message::Modal)
                 });
 
             widget::modal(
@@ -1907,7 +1906,7 @@ impl Halloy {
                         &self.version,
                         FilterChain::borrow(self.storage.get_filters()),
                         &self.config,
-                        &self.theme,
+                        theme,
                     )
                     .map(Message::Dashboard),
             )
@@ -1920,9 +1919,7 @@ impl Halloy {
                 .as_ref()
                 .filter(|modal| modal.window_id() == Some(id))
                 .map(|modal| {
-                    modal
-                        .view(&self.config.font, &self.theme)
-                        .map(Message::Modal)
+                    modal.view(&self.config.font, theme).map(Message::Modal)
                 });
 
             widget::modal(
@@ -1936,13 +1933,14 @@ impl Halloy {
         }
     }
 
-    fn theme(&self, window: window::Id) -> Theme {
-        if let Some(settings) = &self.settings_window
-            && settings.window == window
-        {
-            return settings.preview_theme(&self.config, &self.theme);
-        }
-        self.theme.clone()
+    fn preview_theme(&self) -> &Theme {
+        self.settings_window
+            .as_ref()
+            .map_or(&self.theme, |settings| settings.preview_theme(&self.theme))
+    }
+
+    fn theme(&self, _window: window::Id) -> Theme {
+        self.preview_theme().clone()
     }
 
     fn scale_factor(&self, window: window::Id) -> f32 {
@@ -2009,7 +2007,8 @@ impl Halloy {
 
     fn open_settings(&mut self) -> Task<Message> {
         if let Some(settings) = &self.settings_window {
-            return window::gain_focus(settings.window);
+            return iced::window::minimize(settings.window, false)
+                .chain(window::gain_focus(settings.window));
         }
         let (settings, task) =
             settings::Settings::open(&self.main_window, &self.config);

@@ -78,6 +78,8 @@ pub struct Settings {
     themes: Vec<String>,
     installed_themes: Vec<data::Theme>,
     browser: Option<theme_browser::Browser>,
+    preview: Option<Theme>,
+    pending_themes: Vec<data::appearance::catalog::Entry>,
     saving: bool,
     pub status: Option<String>,
     error: Option<String>,
@@ -96,6 +98,7 @@ impl Settings {
 
     pub fn application_succeeded(&mut self) {
         self.saving = false;
+        self.preview = None;
     }
     pub fn open(
         main: &window::Window,
@@ -148,6 +151,8 @@ impl Settings {
                 themes,
                 installed_themes,
                 browser: None,
+                preview: None,
+                pending_themes: vec![],
                 saving: false,
                 status: None,
                 error: None,
@@ -160,18 +165,67 @@ impl Settings {
         )
     }
 
-    pub fn preview_theme(&self, _config: &Config, current: &Theme) -> Theme {
-        let Ok(draft) = &self.draft else {
-            return current.clone();
-        };
-        if draft.appearance.mode == ThemeMode::Single {
-            self.installed_themes
-                .iter()
-                .find(|theme| theme.name == draft.appearance.theme)
-                .cloned()
-                .map_or_else(|| current.clone(), Theme::from)
-        } else {
-            current.clone()
+    pub fn preview_theme<'a>(&'a self, current: &'a Theme) -> &'a Theme {
+        self.preview.as_ref().unwrap_or(current)
+    }
+
+    fn select_theme(&mut self, target: theme_browser::Target, name: String) {
+        if let Ok(draft) = &mut self.draft {
+            match target {
+                theme_browser::Target::Single => {
+                    draft.appearance.mode = ThemeMode::Single;
+                    draft.appearance.theme = name.clone();
+                }
+                theme_browser::Target::Light => {
+                    draft.appearance.light = name.clone();
+                }
+                theme_browser::Target::Dark => {
+                    draft.appearance.dark = name.clone();
+                }
+            }
+        }
+        self.preview = self
+            .installed_themes
+            .iter()
+            .find(|theme| theme.name.eq_ignore_ascii_case(&name))
+            .cloned()
+            .map(Theme::from)
+            .or_else(|| {
+                self.pending_themes
+                    .iter()
+                    .find(|entry| {
+                        entry.file_stem().is_ok_and(|stem| stem == name)
+                    })
+                    .map(|entry| {
+                        Theme::from(data::Theme::new(name, entry.styles))
+                    })
+            });
+        self.status = None;
+        self.error = None;
+    }
+
+    fn refresh_themes(&mut self) {
+        self.installed_themes =
+            data::appearance::catalog::installed(&Config::themes_dir());
+        self.themes = self
+            .installed_themes
+            .iter()
+            .map(|theme| theme.name.clone())
+            .collect();
+        if let Ok(draft) = &self.draft {
+            for name in [
+                &draft.appearance.theme,
+                &draft.appearance.light,
+                &draft.appearance.dark,
+            ] {
+                if !self.themes.contains(name) {
+                    self.themes.push(name.clone());
+                }
+            }
+        }
+        self.themes.sort_by_key(|name| name.to_lowercase());
+        if let Some(browser) = &mut self.browser {
+            browser.refresh_installed(&self.installed_themes);
         }
     }
 
@@ -193,6 +247,7 @@ impl Settings {
         }
         match message {
             Message::BrowseThemes => {
+                self.refresh_themes();
                 let mode = self
                     .draft
                     .as_ref()
@@ -216,24 +271,23 @@ impl Settings {
                         }
                         self.installed_themes.push(theme);
                     }
-                    Some(theme_browser::Event::Use(target, name)) => {
-                        if let Ok(draft) = &mut self.draft {
-                            match target {
-                                theme_browser::Target::Single => {
-                                    draft.appearance.mode = ThemeMode::Single;
-                                    draft.appearance.theme = name;
-                                }
-                                theme_browser::Target::Light => {
-                                    draft.appearance.light = name;
-                                }
-                                theme_browser::Target::Dark => {
-                                    draft.appearance.dark = name;
-                                }
+                    Some(theme_browser::Event::Preview(target, entry)) => {
+                        if let Ok(name) = entry.file_stem() {
+                            self.pending_themes.retain(|pending| {
+                                pending.file_stem().ok().as_ref() != Some(&name)
+                            });
+                            self.pending_themes.push(entry);
+                            if !self.themes.contains(&name) {
+                                self.themes.push(name.clone());
+                                self.themes
+                                    .sort_by_key(|name| name.to_lowercase());
                             }
+                            self.select_theme(target, name);
                         }
+                    }
+                    Some(theme_browser::Event::Use(target, name)) => {
+                        self.select_theme(target, name);
                         self.browser = None;
-                        self.status = None;
-                        self.error = None;
                     }
                     None => {}
                 }
@@ -250,27 +304,31 @@ impl Settings {
                     None,
                 );
             }
-            Message::Saved(result) => match result {
-                Ok(source) => {
-                    let Ok(draft) = &self.draft else {
-                        return (Task::none(), None);
-                    };
-                    self.restart_needed |= draft.font_changed();
-                    let networks_changed = draft.networks_changed();
-                    self.draft = Draft::parse(source);
-                    self.status = Some(if self.restart_needed {
+            Message::Saved(result) => {
+                self.refresh_themes();
+                match result {
+                    Ok(source) => {
+                        let Ok(draft) = &self.draft else {
+                            return (Task::none(), None);
+                        };
+                        self.restart_needed |= draft.font_changed();
+                        let networks_changed = draft.networks_changed();
+                        self.draft = Draft::parse(source);
+                        self.pending_themes.clear();
+                        self.status = Some(if self.restart_needed {
                             "Saved. Restart Halloy to apply font changes."
                         } else if networks_changed {
                             "Saved. Reconnect existing networks to use connection changes."
                         } else { "Settings applied." }.into());
-                    self.error = None;
-                    return (Task::none(), Some(Event::Saved));
+                        self.error = None;
+                        return (Task::none(), Some(Event::Saved));
+                    }
+                    Err(error) => {
+                        self.saving = false;
+                        self.error = Some(error);
+                    }
                 }
-                Err(error) => {
-                    self.saving = false;
-                    self.error = Some(error);
-                }
-            },
+            }
             Message::Close | Message::Quit => {
                 self.quit_requested = matches!(message, Message::Quit);
                 if self.draft.as_ref().is_ok_and(Draft::is_dirty) {
@@ -306,7 +364,10 @@ impl Settings {
             }
             Message::Revert => {
                 self.browser = None;
+                self.preview = None;
+                self.pending_themes.clear();
                 self.draft = Draft::load();
+                self.refresh_themes();
                 self.selected = self
                     .draft
                     .as_ref()
@@ -415,15 +476,35 @@ impl Settings {
                             network.authentication = value;
                         }
                     }
-                    Message::ThemeMode(value) => draft.appearance.mode = value,
-                    Message::Theme(value) => draft.appearance.theme = value,
-                    Message::Light(value) => draft.appearance.light = value,
-                    Message::Dark(value) => draft.appearance.dark = value,
+                    Message::ThemeMode(value) => {
+                        draft.appearance.mode = value;
+                        self.preview = None;
+                        if value == ThemeMode::Single {
+                            let name = draft.appearance.theme.clone();
+                            self.select_theme(
+                                theme_browser::Target::Single,
+                                name,
+                            );
+                        }
+                    }
+                    Message::Theme(value) => {
+                        self.select_theme(theme_browser::Target::Single, value);
+                    }
+                    Message::Light(value) => {
+                        self.select_theme(theme_browser::Target::Light, value);
+                    }
+                    Message::Dark(value) => {
+                        self.select_theme(theme_browser::Target::Dark, value);
+                    }
                     Message::Sidebar(value) => {
                         draft.appearance.sidebar_position = value;
                     }
                     Message::Apply => {
-                        if !draft.is_dirty() {
+                        if !draft.is_dirty()
+                            || self.browser.as_ref().is_some_and(
+                                theme_browser::Browser::is_downloading,
+                            )
+                        {
                             return (Task::none(), None);
                         }
                         if let Err(error) = draft.render() {
@@ -432,10 +513,43 @@ impl Settings {
                             self.saving = true;
                             self.confirm_close = false;
                             let draft = draft.clone();
+                            let pending = self
+                                .pending_themes
+                                .iter()
+                                .filter(|entry| {
+                                    entry.file_stem().is_ok_and(|name| {
+                                        let used = match draft.appearance.mode {
+                                            ThemeMode::Single => {
+                                                name == draft.appearance.theme
+                                            }
+                                            ThemeMode::System => {
+                                                name == draft.appearance.light
+                                                    || name
+                                                        == draft.appearance.dark
+                                            }
+                                            ThemeMode::Configured => false,
+                                        };
+                                        used && !self
+                                            .installed_themes
+                                            .iter()
+                                            .any(|theme| {
+                                                theme
+                                                    .name
+                                                    .eq_ignore_ascii_case(&name)
+                                            })
+                                    })
+                                })
+                                .cloned()
+                                .collect::<Vec<_>>();
                             return (
                                 Task::perform(
                                     async move {
                                         tokio::task::spawn_blocking(move || {
+                                            for entry in pending {
+                                                entry.install(
+                                                    &Config::themes_dir(),
+                                                )?;
+                                            }
                                             draft.save_to(&Config::path())
                                         })
                                         .await
@@ -496,6 +610,10 @@ impl Settings {
             .into(),
         };
         let dirty = self.draft.as_ref().is_ok_and(Draft::is_dirty);
+        let downloading = self
+            .browser
+            .as_ref()
+            .is_some_and(theme_browser::Browser::is_downloading);
         let mut footer = column![].spacing(10);
         if let Some(error) = &self.error {
             footer = footer.push(text(error).style(theme::text::error));
@@ -521,10 +639,20 @@ impl Settings {
                 row![
                     text(if self.saving {
                         "Saving…"
+                    } else if dirty && self.preview.is_some() {
+                        "Theme preview (unsaved)"
                     } else if dirty {
                         "Unsaved changes"
+                    } else if self.preview.is_some() {
+                        "Saved theme selected"
+                    } else if self
+                        .browser
+                        .as_ref()
+                        .is_some_and(|browser| !browser.has_selection())
+                    {
+                        "Select a theme to preview it"
                     } else {
-                        "Changes are saved to config.toml"
+                        "No unsaved changes"
                     })
                     .style(theme::text::secondary),
                     space::horizontal(),
@@ -539,7 +667,8 @@ impl Settings {
                     button(if self.saving { "Saving…" } else { "Apply" })
                         .padding([8, 20])
                         .on_press_maybe(
-                            (dirty && !self.saving).then_some(Message::Apply)
+                            (dirty && !self.saving && !downloading)
+                                .then_some(Message::Apply)
                         ),
                     action("Close", Message::Close),
                 ]
@@ -799,7 +928,7 @@ impl Settings {
         }
         form = form
             .push(action("Browse and download themes", Message::BrowseThemes));
-        form = form.push(text("One-theme selections preview in this window. Apply to use them throughout Halloy.").style(theme::text::secondary))
+        form = form.push(text("Theme selections preview throughout Halloy. Apply saves your choice; Revert restores the saved appearance.").style(theme::text::secondary))
             .push(rule::horizontal(1))
             .push(text("Font").size(16).font(font::PRIMARY_BOLD.clone()))
             .push(field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false))
@@ -877,4 +1006,117 @@ fn input_style(
         .placeholder
         .mix(theme.styles().text.primary.color, 0.4);
     style
+}
+
+#[cfg(test)]
+mod tests {
+    use data::appearance::catalog::Entry;
+
+    use super::*;
+
+    fn settings(source: &str) -> Settings {
+        let installed_themes = vec![data::Theme::default()];
+        let draft = Draft::parse(source.to_owned()).unwrap();
+        let (browser, _) = theme_browser::Browser::open(
+            &installed_themes,
+            draft.appearance.mode,
+        );
+        Settings {
+            window: window::Id::unique(),
+            draft: Ok(draft),
+            section: Section::Appearance,
+            selected: None,
+            themes: vec!["Ferra".into()],
+            installed_themes,
+            browser: Some(browser),
+            preview: None,
+            pending_themes: vec![],
+            saving: false,
+            status: None,
+            error: None,
+            confirm_close: false,
+            confirm_remove: false,
+            restart_needed: false,
+            quit_requested: false,
+        }
+    }
+
+    fn entry(id: u64, name: &str, background: iced::Color) -> Entry {
+        let mut styles = data::appearance::theme::Styles::default();
+        styles.general.background = background;
+        Entry {
+            id,
+            name: name.into(),
+            styles,
+        }
+    }
+
+    #[test]
+    fn gallery_selection_previews_uninstalled_theme_and_enables_apply() {
+        let mut settings = settings("theme = 'Ferra'\n");
+        let current = Theme::default();
+        let _ =
+            settings.update(Message::Browser(theme_browser::Message::Loaded(
+                Ok(vec![entry(1, "New theme", iced::Color::WHITE)]),
+            )));
+        assert!(!settings.draft.as_ref().unwrap().is_dirty());
+        assert!(std::ptr::eq(settings.preview_theme(&current), &current));
+        let _ = settings
+            .update(Message::Browser(theme_browser::Message::Select(1)));
+        let draft = settings.draft.as_ref().unwrap();
+        assert!(draft.is_dirty());
+        assert_eq!(draft.appearance.theme, "New theme");
+        assert_eq!(
+            settings.preview_theme(&current).styles().general.background,
+            iced::Color::WHITE
+        );
+        assert_eq!(settings.pending_themes.len(), 1);
+        assert_eq!(settings.installed_themes.len(), 1);
+        assert!(draft.render().unwrap().contains("New theme"));
+        let _ = settings.update(Message::Close);
+        assert!(settings.confirm_close);
+        let (_, event) = settings.update(Message::Discard);
+        assert!(matches!(event, Some(Event::Close)));
+    }
+
+    #[test]
+    fn gallery_system_selections_keep_both_slots_and_preview_last_choice() {
+        let mut settings =
+            settings("theme = { light = 'Ferra', dark = 'Ferra' }\n");
+        let _ = settings.update(Message::Browser(
+            theme_browser::Message::Loaded(Ok(vec![
+                entry(1, "New light", iced::Color::WHITE),
+                entry(2, "New dark", iced::Color::BLACK),
+            ])),
+        ));
+        let _ = settings
+            .update(Message::Browser(theme_browser::Message::Select(1)));
+        let _ = settings
+            .update(Message::Browser(theme_browser::Message::Select(2)));
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(draft.appearance.mode, ThemeMode::System);
+        assert_eq!(draft.appearance.light, "New light");
+        assert_eq!(draft.appearance.dark, "New dark");
+        assert_eq!(settings.pending_themes.len(), 2);
+        assert_eq!(
+            settings
+                .preview_theme(&Theme::default())
+                .styles()
+                .general
+                .background,
+            iced::Color::BLACK
+        );
+    }
+
+    #[test]
+    fn selecting_saved_theme_leaves_apply_disabled_and_saved_reload_ends_preview()
+     {
+        let mut settings = settings("theme = 'Ferra'\n");
+        let _ = settings.update(Message::Theme("Ferra".into()));
+        assert!(!settings.draft.as_ref().unwrap().is_dirty());
+        assert!(settings.preview.is_some());
+        settings.application_succeeded();
+        let current = Theme::default();
+        assert!(std::ptr::eq(settings.preview_theme(&current), &current));
+    }
 }

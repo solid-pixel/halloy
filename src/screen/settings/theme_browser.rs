@@ -53,6 +53,7 @@ pub enum Message {
 
 pub enum Event {
     Back,
+    Preview(Target, Entry),
     Installed(data::Theme),
     Use(Target, String),
 }
@@ -95,6 +96,13 @@ impl Browser {
         )
     }
 
+    pub fn refresh_installed(&mut self, themes: &[data::Theme]) {
+        self.installed = themes
+            .iter()
+            .map(|theme| theme.name.to_lowercase())
+            .collect();
+    }
+
     fn matches(&self, entry: &Entry) -> bool {
         entry
             .name
@@ -113,16 +121,17 @@ impl Browser {
         })
     }
 
-    fn select_first(&mut self) {
+    pub fn has_selection(&self) -> bool {
+        self.selected().is_some()
+    }
+
+    pub fn is_downloading(&self) -> bool {
+        self.downloading.is_some()
+    }
+
+    fn retain_selection(&mut self) {
         if self.selected().is_none() {
-            self.selected = self
-                .entries
-                .as_ref()
-                .ok()
-                .and_then(|entries| {
-                    entries.iter().find(|entry| self.matches(entry))
-                })
-                .map(|entry| entry.id);
+            self.selected = None;
         }
     }
 
@@ -140,24 +149,36 @@ impl Browser {
             Message::Loaded(result) => {
                 self.loading = false;
                 self.entries = result;
-                self.select_first();
+                self.retain_selection();
             }
             Message::Search(query) => {
                 self.query = query;
                 self.notice = None;
                 self.error = None;
-                self.select_first();
+                self.retain_selection();
             }
             Message::Filter(filter) => {
                 self.filter = filter;
                 self.notice = None;
                 self.error = None;
-                self.select_first();
+                self.retain_selection();
             }
             Message::Select(id) => {
                 self.selected = Some(id);
                 self.error = None;
                 self.notice = None;
+                if let Some(entry) = self.selected().cloned() {
+                    let target = if self.system_mode {
+                        if entry.is_light() {
+                            Target::Light
+                        } else {
+                            Target::Dark
+                        }
+                    } else {
+                        Target::Single
+                    };
+                    return (Task::none(), Some(Event::Preview(target, entry)));
+                }
             }
             Message::Retry => {
                 self.loading = true;
@@ -349,7 +370,7 @@ impl Browser {
         };
         column![
             heading,
-            text("Community themes from themes.halloy.chat")
+            text("Community themes from themes.halloy.chat · Preview uses sample messages")
                 .style(secondary_text),
             controls,
             body
@@ -365,7 +386,11 @@ impl Browser {
             text(&entry.name).size(16).font(font::PRIMARY_BOLD.clone()),
             text(if entry.is_light() { "Light theme" } else { "Dark theme" }).style(secondary_text),
             preview(entry),
-            text("Preview uses sample messages. Downloading adds the theme to your switcher.").style(secondary_text),
+            text(if self.system_mode {
+                "Selecting previews throughout Halloy and chooses the matching light or dark theme. Apply saves your choice."
+            } else {
+                "Select a theme to preview it throughout Halloy. Apply downloads it if needed and saves your choice."
+            }).style(secondary_text),
         ].spacing(12);
         if let Some(error) = &self.error {
             details = details.push(text(error).style(error_text));
@@ -382,7 +407,7 @@ impl Browser {
                 .spacing(8)
                 .into()
             } else {
-                action("Use theme", Message::Use(Target::Single))
+                text("Installed").style(secondary_text).into()
             }
         } else {
             button(if self.downloading == Some(entry.id) {

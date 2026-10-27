@@ -16,8 +16,9 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
   size, line height, chat interface scale, and sidebar position.
 - Appearance includes a browser for the official Halloy theme gallery: search,
   light/dark filters, sample previews, and downloads into the themes directory.
-  Downloads appear immediately; installing preserves existing files. Using a
-  downloaded theme changes the draft until Apply is pressed.
+  Selecting a theme previews it across all app windows and changes the draft.
+  Apply downloads missing themes and saves the selection. Revert or discarding
+  restores the saved appearance. Downloads preserve existing files.
 - Settings opens from the user menu, command bar, welcome screen, or Cmd/Ctrl+,.
 - Apply validates and saves the existing `config.toml`, then reloads Halloy.
   Other options and comments are retained. A backup is written before replacing

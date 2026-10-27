@@ -25,16 +25,23 @@ Removing a network takes effect when you apply and disconnects that network.
 ## Appearance
 
 Choose an installed theme, or separate themes for light and dark system
-appearance. A single theme previews within Settings before applying. Existing
+appearance. Theme selections preview across all app windows before applying. Existing
 randomized theme lists are shown as **Configured in file** and kept until you
 choose another theme mode.
 
 Select **Browse and download themes** to search the official Halloy gallery,
-filter light or dark themes, and preview sample chat messages. **Download theme**
-saves a theme into Halloy's `themes` directory and adds it to the switcher
-immediately. Existing files are kept. Choose **Use theme** to preview it in
-Settings, then **Apply** to use it throughout Halloy. With system appearance,
-choose **Use as light** or **Use as dark**.
+filter light or dark themes, and preview sample chat messages. Selecting a theme
+previews it throughout Halloy and enables **Apply** when it changes the saved
+selection. **Apply** downloads the theme if needed and saves your choice.
+**Revert changes**, or closing Settings and discarding changes, restores the
+saved appearance.
+
+**Download theme** also lets you save a theme to the switcher without applying
+it. Existing files are kept. With system appearance, selecting a light theme
+updates the light choice and selecting a dark theme updates the dark choice.
+**Use as light** and **Use as dark** can assign an installed theme to either slot.
+The last selection previews regardless of system appearance; applying resumes
+the configured system behavior.
 
 The gallery needs an internet connection. A failed request offers **Try again**
 and a link to the gallery website. Theme files installed manually are picked up
