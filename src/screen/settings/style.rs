@@ -50,6 +50,15 @@ pub fn accessible_theme(theme: &Theme) -> Theme {
     }
     styles.text.primary.color =
         contrast(styles.text.primary.color, background, 7.0);
+    let pane_background = background.mix(styles.text.primary.color, 0.025);
+    for color in [
+        &mut styles.text.secondary.color,
+        &mut styles.text.tertiary.color,
+        &mut styles.text.success.color,
+        &mut styles.text.error.color,
+    ] {
+        *color = contrast(*color, pane_background, 4.5);
+    }
     styles.general.border = contrast(styles.general.border, background, 3.4);
     styles.general.horizontal_rule =
         contrast(styles.general.horizontal_rule, background, 1.5);
@@ -242,6 +251,70 @@ pub fn primary_button(
             color: background,
             ..border(theme, false)
         },
+        ..Default::default()
+    }
+}
+
+pub fn pane(theme: &Theme) -> iced::widget::container::Style {
+    iced::widget::container::Style {
+        background: Some(fill(theme, 0.025).into()),
+        border: Border {
+            color: fill(theme, 0.18),
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
+pub fn section_tab(
+    theme: &Theme,
+    status: button_widget::Status,
+    selected: bool,
+) -> button_widget::Style {
+    let background = fill(
+        theme,
+        if status == button_widget::Status::Hovered {
+            0.07
+        } else if selected {
+            0.025
+        } else {
+            0.0
+        },
+    );
+    button_widget::Style {
+        background: Some(background.into()),
+        text_color: contrast(
+            theme.styles().text.primary.color,
+            background,
+            4.5,
+        ),
+        border: Border {
+            radius: iced::border::Radius {
+                top_left: 4.0,
+                top_right: 4.0,
+                bottom_left: 0.0,
+                bottom_right: 0.0,
+            },
+            ..Border::default()
+        },
+        ..Default::default()
+    }
+}
+
+pub fn tab_indicator(
+    theme: &Theme,
+    selected: bool,
+) -> iced::widget::container::Style {
+    iced::widget::container::Style {
+        background: selected.then(|| {
+            contrast(
+                theme.styles().buffer.url.color,
+                theme.styles().general.background,
+                3.0,
+            )
+            .into()
+        }),
         ..Default::default()
     }
 }

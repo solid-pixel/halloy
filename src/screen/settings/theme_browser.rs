@@ -120,10 +120,6 @@ impl Browser {
         })
     }
 
-    pub fn has_selection(&self) -> bool {
-        self.selected().is_some()
-    }
-
     pub fn is_downloading(&self) -> bool {
         self.downloading.is_some()
     }
@@ -343,15 +339,7 @@ impl Browser {
                                 ),
                             );
                         }
-                        let details = self.selected().map_or_else(
-                            || {
-                                text("Choose a theme from the list.")
-                                    .style(secondary_text)
-                                    .into()
-                            },
-                            |entry| self.details(entry),
-                        );
-                        column![
+                        let mut body = column![
                             text(format!(
                                 "{} {}",
                                 filtered.len(),
@@ -365,12 +353,15 @@ impl Browser {
                             scrollable(list)
                                 .style(style::scrollable)
                                 .height(Length::Fill),
-                            rule::horizontal(1),
-                            details,
                         ]
                         .spacing(12)
-                        .height(Length::Fill)
-                        .into()
+                        .height(Length::Fill);
+                        if let Some(entry) = self.selected() {
+                            body = body
+                                .push(rule::horizontal(1))
+                                .push(self.details(entry));
+                        }
+                        body.into()
                     }
                 }
             }

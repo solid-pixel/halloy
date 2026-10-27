@@ -581,29 +581,42 @@ impl Settings {
             action("Open config file", Message::OpenFile)
         ]
         .align_y(Alignment::Center);
-        let tabs = row![
-            tab(
-                "Networks",
-                self.section == Section::Networks,
-                Message::Section(Section::Networks)
-            ),
-            tab(
-                "Appearance",
-                self.section == Section::Appearance,
-                Message::Section(Section::Appearance)
-            )
+        let tabs = column![
+            row![
+                section_tab(
+                    "Networks",
+                    self.section == Section::Networks,
+                    Message::Section(Section::Networks)
+                ),
+                section_tab(
+                    "Appearance",
+                    self.section == Section::Appearance,
+                    Message::Section(Section::Appearance)
+                ),
+            ]
+            .spacing(8),
+            rule::horizontal(1),
         ]
-        .spacing(6);
+        .spacing(0);
         let body: Element<_> = match &self.draft {
             Ok(draft) => match self.section {
                 Section::Networks => self.networks(draft),
-                Section::Appearance => match &self.browser {
-                    Some(browser) => browser.view().map(Message::Browser),
-                    None => scrollable(self.appearance(draft))
-                        .style(style::scrollable)
+                Section::Appearance => {
+                    let content: Element<_> = match &self.browser {
+                        Some(browser) => browser.view().map(Message::Browser),
+                        None => scrollable(self.appearance(draft))
+                            .style(style::scrollable)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .into(),
+                    };
+                    container(content)
+                        .padding(16)
+                        .width(Length::Fill)
                         .height(Length::Fill)
-                        .into(),
-                },
+                        .style(style::pane)
+                        .into()
+                }
             },
             Err(error) => column![
                 text("Settings could not be loaded")
@@ -651,12 +664,6 @@ impl Settings {
                         "Unsaved changes"
                     } else if self.preview.is_some() {
                         "Saved theme selected"
-                    } else if self
-                        .browser
-                        .as_ref()
-                        .is_some_and(|browser| !browser.has_selection())
-                    {
-                        "Select a theme to preview it"
                     } else {
                         "No unsaved changes"
                     })
@@ -682,15 +689,8 @@ impl Settings {
             );
         }
         let content = container(
-            column![
-                heading,
-                tabs,
-                rule::horizontal(1),
-                body,
-                rule::horizontal(1),
-                footer
-            ]
-            .spacing(16),
+            column![heading, tabs, body, rule::horizontal(1), footer]
+                .spacing(16),
         )
         .padding(24)
         .width(Length::Fill)
@@ -735,7 +735,7 @@ impl Settings {
             action("Add network", Message::Add)
         ]
         .spacing(12)
-        .width(170);
+        .width(Length::Fill);
         let form: Element<_> = if let Some(network) =
             self.selected.and_then(|index| draft.networks.get(index))
         {
@@ -872,10 +872,21 @@ impl Settings {
             .center(Length::Fill)
             .into()
         };
-        row![list, rule::vertical(1), container(form).width(Length::Fill)]
-            .spacing(20)
-            .height(Length::Fill)
-            .into()
+        row![
+            container(list)
+                .padding(12)
+                .width(180)
+                .height(Length::Fill)
+                .style(style::pane),
+            container(form)
+                .padding(16)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(style::pane),
+        ]
+        .spacing(16)
+        .height(Length::Fill)
+        .into()
     }
 
     fn appearance<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
@@ -960,7 +971,7 @@ impl Settings {
             .push(text("Settings stays at its default scale so you can always adjust this value.").style(theme::text::secondary))
             .push(labelled("Sidebar position", pick_list(Some(a.sidebar_position.clone()), vec!["left".to_owned(), "right".to_owned(), "top".to_owned(), "bottom".to_owned()], String::clone).on_select(Message::Sidebar).style(style::pick_list).menu_style(style::menu).width(Length::Fill).padding(8).into()));
         container(form)
-            .width(Length::Fill.max(600))
+            .width(Length::Fill)
             .padding(iced::padding::right(12))
             .into()
     }
@@ -972,6 +983,31 @@ fn action<'a, M: Clone + 'a>(label: &'a str, message: M) -> Element<'a, M> {
         .style(style::button)
         .on_press(message)
         .into()
+}
+
+fn section_tab<'a>(
+    label: &'a str,
+    selected: bool,
+    message: Message,
+) -> Element<'a, Message> {
+    column![
+        button(text(label).font(if selected {
+            font::PRIMARY_BOLD.clone()
+        } else {
+            font::PRIMARY.clone()
+        }))
+        .padding([10, 16])
+        .width(Length::Fill)
+        .style(move |theme, status| style::section_tab(theme, status, selected))
+        .on_press(message),
+        container(space::horizontal())
+            .height(2)
+            .width(Length::Fill)
+            .style(move |theme| style::tab_indicator(theme, selected)),
+    ]
+    .spacing(0)
+    .width(140)
+    .into()
 }
 
 fn tab<'a>(

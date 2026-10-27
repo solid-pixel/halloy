@@ -40,7 +40,8 @@ plain controls. Settings derives readable text, visible control borders, and
 clear focus states from the chosen palette. These adjustments are local to
 Settings; the chat preview uses the theme as supplied. The Settings surface
 operates as a tool: clear forms, independent scrolling, explicit states, and a
-persistent action footer.
+persistent action footer. Compact tabs switch settings areas; faint pane
+backgrounds and borders group content, and Appearance fills the available width.
 
 No change to Halloy’s brand, chat layout, IRC engine, or configuration format is
 part of this request. The fork keeps the upstream license and attribution.
