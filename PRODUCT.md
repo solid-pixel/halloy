@@ -15,7 +15,7 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
 - Appearance: installed themes, light/dark theme selection, font family, text
   size, line height, chat interface scale, and sidebar position.
 - Appearance includes a browser for the official Halloy theme gallery: search,
-  light/dark filters, sample previews, and downloads into the themes directory.
+  light/dark filters and downloads into the themes directory.
   Selecting a theme previews it across all app windows and changes the draft.
   Apply downloads missing themes and saves the selection. Revert or discarding
   restores the saved appearance. Downloads preserve existing files.
@@ -36,8 +36,11 @@ Extend the existing implementation and `assets/screenshot.png`:
 `src/appearance/theme.rs`, its theme modules, `src/widget/pick_list.rs`, and the
 existing native theme editor define fonts, colors, controls, and window behavior.
 Use Halloy’s configured font and palette, flat surfaces, compact labels, and
-plain controls. The Settings surface operates as a tool: clear forms, independent
-scrolling, explicit states, and a persistent action footer.
+plain controls. Settings derives readable text, visible control borders, and
+clear focus states from the chosen palette. These adjustments are local to
+Settings; the chat preview uses the theme as supplied. The Settings surface
+operates as a tool: clear forms, independent scrolling, explicit states, and a
+persistent action footer.
 
 No change to Halloy’s brand, chat layout, IRC engine, or configuration format is
 part of this request. The fork keeps the upstream license and attribution.

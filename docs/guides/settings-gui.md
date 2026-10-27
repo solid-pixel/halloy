@@ -25,14 +25,13 @@ Removing a network takes effect when you apply and disconnects that network.
 ## Appearance
 
 Choose an installed theme, or separate themes for light and dark system
-appearance. Theme selections preview across all app windows before applying. Existing
-randomized theme lists are shown as **Configured in file** and kept until you
-choose another theme mode.
+appearance. Theme selections preview across all app windows before applying.
+Existing randomized theme lists are shown as **Configured in file** and kept
+until you choose another theme mode.
 
-Select **Browse and download themes** to search the official Halloy gallery,
-filter light or dark themes, and preview sample chat messages. Selecting a theme
-previews it throughout Halloy and enables **Apply** when it changes the saved
-selection. **Apply** downloads the theme if needed and saves your choice.
+Select **Browse and download themes** to search the official Halloy gallery
+and filter light or dark themes. Selecting a theme previews it throughout Halloy
+and enables **Apply** when it changes the saved selection. **Apply** downloads the theme if needed and saves your choice.
 **Revert changes**, or closing Settings and discarding changes, restores the
 saved appearance.
 
@@ -81,3 +80,6 @@ To try the GUI with separate configuration and history, create an empty director
 and set `HALLOY_PORTABLE_DIR` to its absolute path when running. Place a test
 `config.toml` there with `autoconnect = false` for every test network if no
 connections are desired.
+
+Settings keeps the selected palette while improving text contrast, field and
+button outlines, and focus visibility. Chat windows show the supplied theme colors.

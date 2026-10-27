@@ -11,6 +11,7 @@ use iced::{Alignment, Length, Size, Task, Vector};
 use crate::widget::{Element, key_press};
 use crate::{Theme, font, open_url, theme, window};
 
+mod style;
 mod theme_browser;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +164,10 @@ impl Settings {
             },
             task,
         )
+    }
+
+    pub fn accessible_theme(&self, current: &Theme) -> Theme {
+        style::accessible_theme(self.preview_theme(current))
     }
 
     pub fn preview_theme<'a>(&'a self, current: &'a Theme) -> &'a Theme {
@@ -595,6 +600,7 @@ impl Settings {
                 Section::Appearance => match &self.browser {
                     Some(browser) => browser.view().map(Message::Browser),
                     None => scrollable(self.appearance(draft))
+                        .style(style::scrollable)
                         .height(Length::Fill)
                         .into(),
                 },
@@ -621,7 +627,7 @@ impl Settings {
         if let Some(status) = &self.status
             && !self.saving
         {
-            footer = footer.push(text(status).style(theme::text::tertiary));
+            footer = footer.push(text(status).style(theme::text::success));
         }
         if self.confirm_close {
             footer = footer.push(
@@ -658,13 +664,12 @@ impl Settings {
                     space::horizontal(),
                     button("Revert changes")
                         .padding([8, 12])
-                        .style(|theme, status| theme::button::secondary(
-                            theme, status, false
-                        ))
+                        .style(style::button)
                         .on_press_maybe(
                             (dirty && !self.saving).then_some(Message::Revert)
                         ),
                     button(if self.saving { "Saving…" } else { "Apply" })
+                        .style(style::primary_button)
                         .padding([8, 20])
                         .on_press_maybe(
                             (dirty && !self.saving && !downloading)
@@ -724,7 +729,9 @@ impl Settings {
             ));
         }
         let list = column![
-            scrollable(list).height(Length::Fill),
+            scrollable(list)
+                .style(style::scrollable)
+                .height(Length::Fill),
             action("Add network", Message::Add)
         ]
         .spacing(12)
@@ -769,6 +776,7 @@ impl Settings {
                         checkbox(network.use_tls)
                             .label("Use TLS")
                             .on_toggle(Message::Tls)
+                            .style(style::checkbox)
                     )
                     .padding(iced::padding::top(25))
                 ]
@@ -789,7 +797,8 @@ impl Settings {
                 ),
                 checkbox(network.autoconnect)
                     .label("Connect automatically on launch")
-                    .on_toggle(Message::Autoconnect),
+                    .on_toggle(Message::Autoconnect)
+                    .style(style::checkbox),
                 rule::horizontal(1),
                 text("Authentication")
                     .font(font::PRIMARY_BOLD.clone())
@@ -800,6 +809,8 @@ impl Settings {
                     Authentication::to_string
                 )
                 .on_select(Message::Authentication)
+                .style(style::pick_list)
+                .menu_style(style::menu)
                 .width(Length::Fill)
                 .padding(8),
             ]
@@ -844,6 +855,7 @@ impl Settings {
                 form = form.push(action("Remove network…", Message::Remove));
             }
             scrollable(form.padding(iced::padding::right(12)))
+                .style(style::scrollable)
                 .height(Length::Fill)
                 .into()
         } else {
@@ -876,6 +888,8 @@ impl Settings {
             text("Theme").size(16).font(font::PRIMARY_BOLD.clone()),
             pick_list(Some(a.mode), modes, ThemeMode::to_string)
                 .on_select(Message::ThemeMode)
+                .style(style::pick_list)
+                .menu_style(style::menu)
                 .width(Length::Fill)
                 .padding(8),
         ]
@@ -890,6 +904,8 @@ impl Settings {
                         String::clone,
                     )
                     .on_select(Message::Theme)
+                    .style(style::pick_list)
+                    .menu_style(style::menu)
                     .width(Length::Fill)
                     .padding(8)
                     .into(),
@@ -905,6 +921,8 @@ impl Settings {
                             String::clone,
                         )
                         .on_select(Message::Light)
+                        .style(style::pick_list)
+                        .menu_style(style::menu)
                         .width(Length::Fill)
                         .padding(8)
                         .into(),
@@ -917,6 +935,8 @@ impl Settings {
                             String::clone,
                         )
                         .on_select(Message::Dark)
+                        .style(style::pick_list)
+                        .menu_style(style::menu)
                         .width(Length::Fill)
                         .padding(8)
                         .into(),
@@ -938,7 +958,7 @@ impl Settings {
             .push(text("Layout").size(16).font(font::PRIMARY_BOLD.clone()))
             .push(field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false))
             .push(text("Settings stays at its default scale so you can always adjust this value.").style(theme::text::secondary))
-            .push(labelled("Sidebar position", pick_list(Some(a.sidebar_position.clone()), vec!["left".to_owned(), "right".to_owned(), "top".to_owned(), "bottom".to_owned()], String::clone).on_select(Message::Sidebar).width(Length::Fill).padding(8).into()));
+            .push(labelled("Sidebar position", pick_list(Some(a.sidebar_position.clone()), vec!["left".to_owned(), "right".to_owned(), "top".to_owned(), "bottom".to_owned()], String::clone).on_select(Message::Sidebar).style(style::pick_list).menu_style(style::menu).width(Length::Fill).padding(8).into()));
         container(form)
             .width(Length::Fill.max(600))
             .padding(iced::padding::right(12))
@@ -949,7 +969,7 @@ impl Settings {
 fn action<'a, M: Clone + 'a>(label: &'a str, message: M) -> Element<'a, M> {
     button(text(label))
         .padding([8, 12])
-        .style(|theme, status| theme::button::secondary(theme, status, false))
+        .style(style::button)
         .on_press(message)
         .into()
 }
@@ -962,9 +982,7 @@ fn tab<'a>(
     button(text(label))
         .padding([8, 12])
         .width(Length::Fill)
-        .style(move |theme, status| {
-            theme::button::primary(theme, status, selected)
-        })
+        .style(move |theme, status| style::tab(theme, status, selected))
         .on_press(message)
         .into()
 }
@@ -1001,11 +1019,7 @@ fn input_style(
     theme: &Theme,
     status: iced::widget::text_input::Status,
 ) -> iced::widget::text_input::Style {
-    let mut style = theme::text_input::primary(theme, status);
-    style.placeholder = style
-        .placeholder
-        .mix(theme.styles().text.primary.color, 0.4);
-    style
+    style::input(theme, status)
 }
 
 #[cfg(test)]

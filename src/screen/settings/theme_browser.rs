@@ -4,14 +4,13 @@ use data::Config;
 use data::appearance::catalog::{self, Entry};
 use data::config::settings::ThemeMode;
 use iced::widget::{
-    button, column, container, pick_list, row, rule, scrollable, space, text,
-    text_input,
+    button, column, pick_list, row, rule, scrollable, space, text, text_input,
 };
 use iced::{Alignment, Length, Task};
 
-use super::{action, input_style};
+use super::{action, input_style, style};
 use crate::widget::Element;
-use crate::{font, open_url, theme};
+use crate::{font, open_url};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Filter {
@@ -271,6 +270,8 @@ impl Browser {
                 Filter::to_string
             )
             .on_select(Message::Filter)
+            .style(style::pick_list)
+            .menu_style(style::menu)
             .padding(8)
             .width(160),
         ]
@@ -279,8 +280,7 @@ impl Browser {
             column![
                 text("Loading themes from the Halloy gallery…"),
                 rule::horizontal(1),
-                text("Theme names and previews will appear here.")
-                    .style(secondary_text)
+                text("Theme names will appear here.").style(secondary_text)
             ]
             .spacing(16)
             .into()
@@ -310,7 +310,48 @@ impl Browser {
                         .spacing(12)
                         .into()
                     } else {
-                        let mut list = column![
+                        let mut list = column![].spacing(4);
+                        for entry in &filtered {
+                            let selected = self.selected == Some(entry.id);
+                            list = list.push(
+                                button(
+                                    row![
+                                        text(&entry.name).width(Length::Fill),
+                                        text(if entry.is_light() {
+                                            "Light"
+                                        } else {
+                                            "Dark"
+                                        })
+                                        .width(80),
+                                        text(if self.is_installed(entry) {
+                                            "Installed"
+                                        } else {
+                                            ""
+                                        })
+                                        .width(100),
+                                    ]
+                                    .spacing(12)
+                                    .align_y(Alignment::Center),
+                                )
+                                .padding([8, 10])
+                                .width(Length::Fill)
+                                .on_press(Message::Select(entry.id))
+                                .style(
+                                    move |theme, status| {
+                                        style::tab(theme, status, selected)
+                                    },
+                                ),
+                            );
+                        }
+                        let details = self.selected().map_or_else(
+                            || {
+                                text("Choose a theme from the list.")
+                                    .style(secondary_text)
+                                    .into()
+                            },
+                            |entry| self.details(entry),
+                        );
+                        column![
                             text(format!(
                                 "{} {}",
                                 filtered.len(),
@@ -320,48 +361,14 @@ impl Browser {
                                     "themes"
                                 }
                             ))
-                            .style(secondary_text)
+                            .style(secondary_text),
+                            scrollable(list)
+                                .style(style::scrollable)
+                                .height(Length::Fill),
+                            rule::horizontal(1),
+                            details,
                         ]
-                        .spacing(4);
-                        for entry in filtered {
-                            let selected = self.selected == Some(entry.id);
-                            list =
-                                list.push(
-                                    button(
-                                        column![
-                                            text(&entry.name),
-                                            text(if self.is_installed(entry) {
-                                                "Installed"
-                                            } else if entry.is_light() {
-                                                "Light"
-                                            } else {
-                                                "Dark"
-                                            })
-                                            .size(11)
-                                            .style(theme::text::primary)
-                                        ]
-                                        .spacing(3),
-                                    )
-                                    .padding([8, 10])
-                                    .width(Length::Fill)
-                                    .on_press(Message::Select(entry.id))
-                                    .style(move |theme, status| {
-                                        theme::button::primary(
-                                            theme, status, selected,
-                                        )
-                                    }),
-                                );
-                        }
-                        let details = self.selected().map_or_else(
-                            || text("Select a theme to preview it.").into(),
-                            |entry| self.details(entry),
-                        );
-                        row![
-                            scrollable(list).width(190).height(Length::Fill),
-                            rule::vertical(1),
-                            container(details).width(Length::Fill)
-                        ]
-                        .spacing(16)
+                        .spacing(12)
                         .height(Length::Fill)
                         .into()
                     }
@@ -370,8 +377,10 @@ impl Browser {
         };
         column![
             heading,
-            text("Community themes from themes.halloy.chat · Preview uses sample messages")
-                .style(secondary_text),
+            text(
+                "Select to preview throughout Halloy. Apply saves your choice."
+            )
+            .style(secondary_text),
             controls,
             body
         ]
@@ -382,22 +391,6 @@ impl Browser {
 
     fn details<'a>(&'a self, entry: &'a Entry) -> Element<'a, Message> {
         let installed = self.is_installed(entry);
-        let mut details = column![
-            text(&entry.name).size(16).font(font::PRIMARY_BOLD.clone()),
-            text(if entry.is_light() { "Light theme" } else { "Dark theme" }).style(secondary_text),
-            preview(entry),
-            text(if self.system_mode {
-                "Selecting previews throughout Halloy and chooses the matching light or dark theme. Apply saves your choice."
-            } else {
-                "Select a theme to preview it throughout Halloy. Apply downloads it if needed and saves your choice."
-            }).style(secondary_text),
-        ].spacing(12);
-        if let Some(error) = &self.error {
-            details = details.push(text(error).style(error_text));
-        }
-        if let Some(notice) = &self.notice {
-            details = details.push(text(notice).style(success_text));
-        }
         let controls: Element<_> = if installed {
             if self.system_mode {
                 row![
@@ -416,56 +409,35 @@ impl Browser {
                 "Download theme"
             })
             .padding([8, 12])
+            .style(style::button)
             .on_press_maybe(
                 self.downloading.is_none().then_some(Message::Download),
             )
             .into()
         };
-        column![scrollable(details).height(Length::Fill), controls]
+        let mut details = column![
+            row![
+                text(&entry.name)
+                    .size(16)
+                    .font(font::PRIMARY_BOLD.clone())
+                    .width(Length::Fill),
+                controls,
+            ]
             .spacing(12)
-            .height(Length::Fill)
-            .into()
+            .align_y(Alignment::Center)
+        ]
+        .spacing(8);
+        if self.system_mode {
+            details = details.push(text("Light and dark themes update the matching system appearance.").style(secondary_text));
+        }
+        if let Some(error) = &self.error {
+            details = details.push(text(error).style(error_text));
+        }
+        if let Some(notice) = &self.notice {
+            details = details.push(text(notice).style(success_text));
+        }
+        details.into()
     }
-}
-
-fn preview(entry: &Entry) -> Element<'_, Message> {
-    let styles = entry.styles;
-    let title = container(text("#halloy").size(12))
-        .padding(10)
-        .width(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(styles.buffer.background_title_bar.into()),
-            text_color: Some(styles.buffer.topic.color),
-            ..Default::default()
-        });
-    let messages = column![
-        row![
-            text("alex").color(styles.buffer.nickname.color),
-            text("Welcome to Halloy.").color(styles.text.primary.color)
-        ]
-        .spacing(8),
-        row![
-            text("you").color(styles.text.tertiary.color),
-            text("This is how messages will look.")
-                .color(styles.text.primary.color)
-        ]
-        .spacing(8),
-        text("https://halloy.chat").color(styles.buffer.url.color),
-    ]
-    .spacing(12)
-    .padding(12);
-    container(column![title, messages])
-        .width(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(styles.buffer.background.into()),
-            border: iced::Border {
-                color: styles.buffer.border_selected,
-                width: 1.0,
-                radius: 4.0.into(),
-            },
-            ..Default::default()
-        })
-        .into()
 }
 
 fn readable_text(

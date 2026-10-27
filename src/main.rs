@@ -1939,7 +1939,12 @@ impl Halloy {
             .map_or(&self.theme, |settings| settings.preview_theme(&self.theme))
     }
 
-    fn theme(&self, _window: window::Id) -> Theme {
+    fn theme(&self, window: window::Id) -> Theme {
+        if let Some(settings) = &self.settings_window
+            && settings.window == window
+        {
+            return settings.accessible_theme(&self.theme);
+        }
         self.preview_theme().clone()
     }
 
