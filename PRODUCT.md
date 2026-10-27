@@ -1,8 +1,8 @@
 # Halloy settings GUI fork
 
-This fork extends Halloy with graphical editing for Networks and Appearance.
-The user authorized the fork and these two settings areas, and explicitly
-requested Impeccable and Halloy’s existing design language.
+This fork extends Halloy with graphical editing for Networks, Appearance,
+Navigation and panes, Chat display, and Sidebar. The user authorized these areas
+and explicitly requested Impeccable and Halloy’s existing design language.
 
 The initial audience is desktop Halloy users who want to configure the client
 through forms. This audience is inferred from the request. Halloy supports
@@ -13,7 +13,13 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
 - Networks: add, rename, and remove a server; edit hostname, port, nickname,
   auto-join channels, TLS, automatic connection, SASL PLAIN, and NickServ.
 - Appearance: installed themes, light/dark theme selection, font family, text
-  size, line height, chat interface scale, and sidebar position.
+  size, line height, and chat interface scale.
+- Navigation: chat-opening and click actions, a current-pane preset, split axis,
+  pane gaps and restoration, title bar buttons, and chat scrollbars.
+- Chat display: messages and timestamps, names and user lists, activity messages,
+  read markers, the composer, emoji, and typing indicators.
+- Sidebar: position, width, order, labels, spacing, unread and highlight
+  indicators, typing indicators, and scrollbars.
 - Appearance includes a browser for the official Halloy theme gallery: search,
   light/dark filters and downloads into the themes directory.
   Selecting a theme previews it across all app windows and changes the draft.
@@ -42,6 +48,7 @@ Settings; the chat preview uses the theme as supplied. The Settings surface
 operates as a tool: clear forms, independent scrolling, explicit states, and a
 persistent action footer. Compact tabs switch settings areas; faint pane
 backgrounds and borders group content, and Appearance fills the available width.
+Navigation, Chat display, and Sidebar use a compact group list alongside the form.
 
 No change to Halloy’s brand, chat layout, IRC engine, or configuration format is
 part of this request. The fork keeps the upstream license and attribution.

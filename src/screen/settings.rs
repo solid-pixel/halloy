@@ -11,6 +11,7 @@ use iced::{Alignment, Length, Size, Task, Vector};
 use crate::widget::{Element, key_press};
 use crate::{Theme, font, open_url, theme, window};
 
+mod preferences;
 mod style;
 mod theme_browser;
 
@@ -18,6 +19,9 @@ mod theme_browser;
 pub enum Section {
     Networks,
     Appearance,
+    Navigation,
+    Chat,
+    Sidebar,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +58,9 @@ pub enum Message {
     Light(String),
     Dark(String),
     Sidebar(String),
+    PreferenceGroup(usize),
+    Preference(usize, String),
+    ReuseCurrentPane,
     Apply,
     Saved(Result<String, String>),
     Revert,
@@ -75,6 +82,7 @@ pub struct Settings {
     pub window: window::Id,
     draft: Result<Draft, String>,
     section: Section,
+    preference_group: usize,
     selected: Option<usize>,
     themes: Vec<String>,
     installed_themes: Vec<data::Theme>,
@@ -148,6 +156,7 @@ impl Settings {
                 window,
                 draft,
                 section: Section::Networks,
+                preference_group: 0,
                 selected,
                 themes,
                 installed_themes,
@@ -393,8 +402,26 @@ impl Settings {
                 match message {
                     Message::Section(section) => {
                         self.section = section;
+                        self.preference_group = 0;
                         self.browser = None;
                         self.confirm_remove = false;
+                    }
+                    Message::PreferenceGroup(index) => {
+                        self.preference_group = index;
+                    }
+                    Message::Preference(index, value) => {
+                        if let Some(field) =
+                            draft.preferences.fields.get_mut(index)
+                        {
+                            field.value = value;
+                        }
+                    }
+                    Message::ReuseCurrentPane => {
+                        draft.preferences.reuse_current_pane();
+                        self.status = Some(
+                            "Current-pane navigation selected. Apply to save."
+                                .into(),
+                        );
                     }
                     Message::Select(index) => {
                         self.selected = Some(index);
@@ -593,6 +620,21 @@ impl Settings {
                     self.section == Section::Appearance,
                     Message::Section(Section::Appearance)
                 ),
+                section_tab(
+                    "Navigation",
+                    self.section == Section::Navigation,
+                    Message::Section(Section::Navigation)
+                ),
+                section_tab(
+                    "Chat display",
+                    self.section == Section::Chat,
+                    Message::Section(Section::Chat)
+                ),
+                section_tab(
+                    "Sidebar",
+                    self.section == Section::Sidebar,
+                    Message::Section(Section::Sidebar)
+                ),
             ]
             .spacing(8),
             rule::horizontal(1),
@@ -601,6 +643,18 @@ impl Settings {
         let body: Element<_> = match &self.draft {
             Ok(draft) => match self.section {
                 Section::Networks => self.networks(draft),
+                Section::Navigation => self.preferences(
+                    draft,
+                    data::config::settings::preferences::Area::Navigation,
+                ),
+                Section::Chat => self.preferences(
+                    draft,
+                    data::config::settings::preferences::Area::Chat,
+                ),
+                Section::Sidebar => self.preferences(
+                    draft,
+                    data::config::settings::preferences::Area::Sidebar,
+                ),
                 Section::Appearance => {
                     let content: Element<_> = match &self.browser {
                         Some(browser) => browser.view().map(Message::Browser),
@@ -968,8 +1022,7 @@ impl Settings {
             .push(rule::horizontal(1))
             .push(text("Layout").size(16).font(font::PRIMARY_BOLD.clone()))
             .push(field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false))
-            .push(text("Settings stays at its default scale so you can always adjust this value.").style(theme::text::secondary))
-            .push(labelled("Sidebar position", pick_list(Some(a.sidebar_position.clone()), vec!["left".to_owned(), "right".to_owned(), "top".to_owned(), "bottom".to_owned()], String::clone).on_select(Message::Sidebar).style(style::pick_list).menu_style(style::menu).width(Length::Fill).padding(8).into()));
+            .push(text("Settings stays at its default scale so you can always adjust this value.").style(theme::text::secondary));
         container(form)
             .width(Length::Fill)
             .padding(iced::padding::right(12))
@@ -1006,7 +1059,12 @@ fn section_tab<'a>(
             .style(move |theme| style::tab_indicator(theme, selected)),
     ]
     .spacing(0)
-    .width(140)
+    .width(match label {
+        "Networks" => 112,
+        "Appearance" | "Navigation" => 124,
+        "Chat display" => 132,
+        _ => 100,
+    })
     .into()
 }
 
@@ -1075,6 +1133,7 @@ mod tests {
             window: window::Id::unique(),
             draft: Ok(draft),
             section: Section::Appearance,
+            preference_group: 0,
             selected: None,
             themes: vec!["Ferra".into()],
             installed_themes,

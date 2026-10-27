@@ -1,7 +1,8 @@
 # Halloy - IRC Client
 
-This fork adds a native **Settings** window for Networks and Appearance, using
-Halloy's existing design and `config.toml` format. Open it from the user menu,
+This fork adds a native **Settings** window for Networks, Appearance, Navigation,
+Chat display, and Sidebar, using Halloy's existing design and `config.toml`
+format. Open it from the user menu,
 the command bar, or **⌘,** on macOS (**Ctrl+,** elsewhere).
 See the [settings guide](docs/guides/settings-gui.md) for supported options,
 saving behavior, and development commands. Official Halloy packages linked

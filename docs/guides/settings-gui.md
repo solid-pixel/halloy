@@ -1,7 +1,8 @@
 # Settings GUI
 
-This fork adds Networks and Appearance to a native Settings window. Open
-**Settings** from the sidebar user menu, choose **Configuration: Open Settings**
+This fork adds Networks, Appearance, Navigation, Chat display, and Sidebar
+to a native Settings window. Open **Settings** from the sidebar user menu,
+choose **Configuration: Open Settings**
 in the command bar, or press **⌘,** on macOS / **Ctrl+,** on Windows and Linux.
 The welcome screen also has an **Open Settings** button.
 
@@ -47,9 +48,44 @@ and a link to the gallery website. Theme files installed manually are picked up
 when Settings is reopened.
 
 Font family, text size, and line height require an application restart after
-applying. Empty font fields use Halloy's defaults. Interface scale and sidebar
-position apply immediately. Chat interface scale affects the chat windows;
+applying. Empty font fields use Halloy's defaults. Interface scale applies
+immediately. Chat interface scale affects the chat windows;
 Settings stays at its default scale so the scale control remains reachable.
+
+## Navigation and panes
+
+Choose how sidebar items, channel links, nicknames, commands, tools, and
+notifications open chats. **Reuse the current pane for everything** stages all
+these actions to replace the current pane. Press **Apply**, then close existing
+extra panes if you want a single chat pane. Individual actions can also open a
+new pane or window.
+
+The other groups control the split direction, saved pane layout, spacing,
+title bar buttons, and chat scrollbars. The split direction controls future
+splits; changing it does not rearrange existing panes.
+
+## Chat display
+
+Use the group list to edit timestamps and date separators, repeated timestamps
+and nicknames, message spacing, backlog behavior, nickname colors and alignment,
+access levels, the user list, and the topic banner. Activity controls cover
+server messages, joins, parts, quits, nickname changes, and modes.
+
+Read markers, composer visibility, formatting, nickname display, draft
+persistence, completion order, emoji, and typing indicators have their own
+groups. These are global defaults; channel-specific configuration can override
+them. Timestamp and date formats use Halloy's existing format syntax.
+
+## Sidebar
+
+Set the position, width, server and channel ordering, menu buttons, label sizes,
+icon sizes, casing, and spacing. Separate groups control unread indicators,
+highlights, typing indicators, and scrollbars. Empty optional size fields use
+Halloy's defaults. Position changes apply immediately.
+
+Advanced values that do not fit a picker are shown as **Configured in file**.
+They stay intact until you choose a replacement. Only edited settings are
+written, including when the original file uses an older supported setting name.
 
 ## Saving
 

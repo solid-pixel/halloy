@@ -1,5 +1,7 @@
 //! Editable settings backed by the original document, rather than the runtime
 //! config (which contains defaults and resolved credentials).
+pub mod preferences;
+
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::Path;
@@ -172,6 +174,7 @@ pub struct Settings {
     original_appearance: Appearance,
     pub networks: Vec<Network>,
     pub appearance: Appearance,
+    pub preferences: preferences::Preferences,
 }
 
 impl Settings {
@@ -248,18 +251,21 @@ impl Settings {
                 .unwrap_or("left")
                 .to_owned(),
         };
+        let preferences = preferences::Preferences::parse(&document)?;
         Ok(Self {
             source,
             original_networks: networks.clone(),
             original_appearance: appearance.clone(),
             networks,
             appearance,
+            preferences,
         })
     }
 
     pub fn is_dirty(&self) -> bool {
         self.networks != self.original_networks
             || self.appearance != self.original_appearance
+            || self.preferences.is_dirty()
     }
 
     pub fn font_changed(&self) -> bool {
@@ -546,6 +552,7 @@ impl Settings {
                 value(&a.sidebar_position),
             );
         }
+        self.preferences.render_into(&mut document)?;
         let contents = document.to_string();
         Config::validate(&contents).map_err(|error| error.to_string())?;
         Ok(contents)
