@@ -3,8 +3,8 @@ use data::config::settings::{
     Authentication, Network, Settings as Draft, ThemeMode,
 };
 use iced::widget::{
-    button, checkbox, column, container, pick_list, row, rule, scrollable,
-    space, text, text_input,
+    button, checkbox, column, container, pick_list, responsive, row, rule,
+    scrollable, space, text, text_input,
 };
 use iced::{Alignment, Length, Size, Task, Vector};
 
@@ -774,16 +774,7 @@ impl Settings {
                 continue;
             };
             let mut children = column![].spacing(2);
-            if section == Section::Networks {
-                for (index, network) in draft.networks.iter().enumerate() {
-                    children = children.push(tab(
-                        &network.name,
-                        self.selected == Some(index),
-                        Message::Select(index),
-                    ));
-                }
-                children = children.push(action("Add network", Message::Add));
-            } else if let Some(area) = preference_area(section) {
+            if let Some(area) = preference_area(section) {
                 for (index, group) in
                     preferences::groups(draft, area).iter().enumerate()
                 {
@@ -821,6 +812,35 @@ impl Settings {
     }
 
     fn networks<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
+        let mut list = column![].spacing(4);
+        for (index, network) in draft.networks.iter().enumerate() {
+            list = list.push(tab(
+                &network.name,
+                self.selected == Some(index),
+                Message::Select(index),
+            ));
+        }
+        row![
+            container(column![
+                scrollable(list).style(style::scrollable).height(Length::Fill),
+                action("Add network", Message::Add),
+            ].spacing(12))
+                .padding(8)
+                .width(144)
+                .height(Length::Fill)
+                .style(style::pane),
+            responsive(move |size| self.network_form(draft, size.width < 440.0)),
+        ]
+        .spacing(12)
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn network_form<'a>(
+        &'a self,
+        draft: &'a Draft,
+        stacked: bool,
+    ) -> Element<'a, Message> {
         let form: Element<_> = if let Some(network) =
             self.selected.and_then(|index| draft.networks.get(index))
         {
@@ -833,21 +853,23 @@ impl Settings {
                 authentication.push(Authentication::Advanced);
             }
             let connection = vec![
-                field(
+                field_with_layout(
                     "Network name",
                     "e.g. Libera",
                     &network.name,
                     Field::Name,
                     false,
+                    stacked,
                 ),
-                field(
+                field_with_layout(
                     "Server",
                     "irc.libera.chat",
                     &network.server,
                     Field::Server,
                     false,
+                    stacked,
                 ),
-                labelled_width(
+                labelled_with_layout(
                     "Port",
                     row![
                         container(input_field(
@@ -866,20 +888,23 @@ impl Settings {
                     .align_y(Alignment::Center)
                     .into(),
                     260.0,
+                    stacked,
                 ),
-                field(
+                field_with_layout(
                     "Nickname",
                     "Your nickname",
                     &network.nickname,
                     Field::Nickname,
                     false,
+                    stacked,
                 ),
-                field(
+                field_with_layout(
                     "Join channels on connect",
                     "#halloy, #rust",
                     &network.channels,
                     Field::Channels,
                     false,
+                    stacked,
                 ),
                 checkbox(network.autoconnect)
                     .label("Connect automatically on launch")
@@ -887,7 +912,7 @@ impl Settings {
                     .style(style::checkbox)
                     .into(),
             ];
-            let mut authentication_rows = vec![labelled(
+            let mut authentication_rows = vec![labelled_with_layout(
                 "Method",
                 pick_list(
                     Some(network.authentication),
@@ -900,15 +925,18 @@ impl Settings {
                 .width(Length::Fill)
                 .padding(6)
                 .into(),
+                320.0,
+                stacked,
             )];
             match network.authentication {
                 Authentication::Sasl => {
-                    authentication_rows.push(field(
+                    authentication_rows.push(field_with_layout(
                         "Account name",
                         "Use nickname",
                         &network.username,
                         Field::Username,
                         false,
+                        stacked,
                     ));
                 }
                 Authentication::Advanced => {
@@ -920,7 +948,7 @@ impl Settings {
                 network.authentication,
                 Authentication::Sasl | Authentication::NickServ
             ) {
-                authentication_rows.push(column![field("Password", "Account password", &network.password, Field::Password, true), text("Passwords entered here are stored in config.toml. Use the config file for keyring or password-command authentication.").size(12).style(theme::text::secondary)].spacing(4).into());
+                authentication_rows.push(column![field_with_layout("Password", "Account password", &network.password, Field::Password, true, stacked), text("Passwords entered here are stored in config.toml. Use the config file for keyring or password-command authentication.").size(12).style(theme::text::secondary)].spacing(4).into());
             }
             let mut form = column![
                 text(&network.name)
@@ -1148,6 +1176,17 @@ fn field<'a>(
     field: Field,
     secret: bool,
 ) -> Element<'a, Message> {
+    field_with_layout(label, placeholder, value, field, secret, false)
+}
+
+fn field_with_layout<'a>(
+    label: &'a str,
+    placeholder: &'a str,
+    value: &'a str,
+    field: Field,
+    secret: bool,
+    stacked: bool,
+) -> Element<'a, Message> {
     let width = match field {
         Field::Port | Field::FontSize | Field::LineHeight | Field::Scale => {
             104.0
@@ -1157,7 +1196,12 @@ fn field<'a>(
         Field::Server => 360.0,
         _ => 300.0,
     };
-    labelled_width(label, input_field(placeholder, value, field, secret), width)
+    labelled_with_layout(
+        label,
+        input_field(placeholder, value, field, secret),
+        width,
+        stacked,
+    )
 }
 
 fn input_field<'a>(
@@ -1187,6 +1231,24 @@ fn labelled_width<'a>(
     control: Element<'a, Message>,
     max_width: f32,
 ) -> Element<'a, Message> {
+    labelled_with_layout(label, control, max_width, false)
+}
+
+fn labelled_with_layout<'a>(
+    label: &'a str,
+    control: Element<'a, Message>,
+    max_width: f32,
+    stacked: bool,
+) -> Element<'a, Message> {
+    if stacked {
+        return column![
+            text(label),
+            container(control).width(Length::Fill.max(max_width))
+        ]
+        .spacing(4)
+        .width(Length::Fill)
+        .into();
+    }
     row![
         text(label).width(160),
         container(control).width(Length::Fill.max(max_width))

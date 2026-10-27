@@ -48,16 +48,20 @@ palette. Picker menus and unchecked boxes use the same control fill. These
 adjustments are local to Settings; the chat preview uses the theme as supplied.
 The Settings surface operates as a tool: clear forms, independent scrolling,
 explicit states, and a persistent action footer. Form labels sit beside their
-controls in aligned rows. Controls adapt to the available space and stop at
-widths suited to their content; numeric fields stay short, while text fields
-and pickers allow longer values. Density comes from compact row spacing and
-padding while retaining the existing text hierarchy.
-A single vertical navigation pane on the left contains all settings areas.
-The active area expands its network list or preference groups beneath its
-heading; indented children distinguish that level from the area headings.
-The selected network or group opens in the form to the right. Appearance and
-its theme browser use that same right pane. Navigation and forms scroll
-independently, and the two columns remain available at the minimum window size.
+controls in aligned rows. Network form labels move above their controls when
+the form has less than 440 pixels of width. Controls adapt to the available
+space and stop at widths suited to their content; numeric fields stay short,
+while text fields and pickers allow longer values. Density comes from compact
+row spacing and padding while retaining the existing text hierarchy.
+A vertical navigation pane on the left contains all settings areas.
+Networks opens a second sidebar with a scrolling network list and an
+**Add network** button anchored at the bottom. The selected network opens in
+the form to its right. Preference areas expand their groups beneath the active
+heading in the main navigation; indented children distinguish that level from
+the area headings. The selected group, Appearance, and its theme browser use
+the form pane beside the main navigation. Navigation, the network list, and
+forms scroll independently. All three Networks columns remain available at the
+minimum window size.
 
 Related settings share flat groups with a faint palette-derived background,
 a visible border, and inset separators between rows. The Networks form separates

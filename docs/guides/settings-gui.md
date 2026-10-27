@@ -6,23 +6,27 @@ choose **Configuration: Open Settings**
 in the command bar, or press **⌘,** on macOS / **Ctrl+,** on Windows and Linux.
 The welcome screen also has an **Open Settings** button.
 
-Choose an area in the navigation pane on the left. The active area expands its
-networks or preference groups beneath its heading; choose an indented item to
-open its form on the right. Appearance and its theme browser use the same right
-pane. Navigation and forms scroll independently, including at the minimum window
-size.
+Choose an area in the navigation pane on the left. **Networks** opens a second
+sidebar with the network list; select a network to open its form on the right.
+Preference areas expand their groups beneath the active heading in the main
+navigation; choose an indented group to open its form. Appearance and its theme
+browser use the pane beside the main navigation. Navigation, the network list,
+and forms scroll independently, including at the minimum window size.
 
 Related settings appear in flat groups with a faint background, a border, and
 inset separators between rows. Form labels sit beside their controls, with short
-numeric fields and wider text fields and pickers. Controls adjust to the
-available width, with a limit suited to their content.
+numeric fields and wider text fields and pickers. In a narrow Networks form,
+labels move above their controls. Controls adjust to the available width, with
+a limit suited to their content.
 
 The footer keeps the draft status, **Revert changes**, **Apply**, and **Close**
 visible while forms scroll.
 
 ## Networks
 
-Add, rename, or remove networks. Each network has a server hostname, an optional
+Use **Add network** at the bottom of the network sidebar to create a network.
+Select a network in the list to rename or remove it and edit its connection or
+authentication settings. Each network has a server hostname, an optional
 port, a nickname, channels to join on connection, TLS, and automatic connection
 on launch. An empty port uses Halloy's default for the configured transport.
 
