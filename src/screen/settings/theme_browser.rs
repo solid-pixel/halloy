@@ -258,7 +258,7 @@ impl Browser {
         let controls = row![
             text_input("Search themes…", &self.query)
                 .style(input_style)
-                .padding(8)
+                .padding(6)
                 .on_input(Message::Search),
             pick_list(
                 Some(self.filter),
@@ -268,7 +268,7 @@ impl Browser {
             .on_select(Message::Filter)
             .style(style::pick_list)
             .menu_style(style::menu)
-            .padding(8)
+            .padding(6)
             .width(160),
         ]
         .spacing(12);
@@ -329,7 +329,7 @@ impl Browser {
                                     .spacing(12)
                                     .align_y(Alignment::Center),
                                 )
-                                .padding([8, 10])
+                                .padding([6, 8])
                                 .width(Length::Fill)
                                 .on_press(Message::Select(entry.id))
                                 .style(
@@ -399,7 +399,7 @@ impl Browser {
             } else {
                 "Download theme"
             })
-            .padding([8, 12])
+            .padding([6, 10])
             .style(style::button)
             .on_press_maybe(
                 self.downloading.is_none().then_some(Message::Download),

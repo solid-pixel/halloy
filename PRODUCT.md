@@ -46,12 +46,18 @@ plain controls. Settings derives readable text, visibly filled inputs and
 pickers, visible control borders, and clear focus states from the chosen
 palette. Picker menus and unchecked boxes use the same control fill. These
 adjustments are local to Settings; the chat preview uses the theme as supplied.
-The Settings surface
-operates as a tool: clear forms, independent scrolling, explicit states, and a
-persistent action footer. Compact underlined tabs switch settings areas; pane
+The Settings surface operates as a tool: clear forms, independent scrolling,
+explicit states, and a persistent action footer. Form labels sit beside their
+controls in aligned rows. Controls adapt to the available space and stop at
+widths suited to their content; numeric fields stay short, while text fields
+and pickers allow longer values. Density comes from compact row spacing and
+padding while retaining the existing text hierarchy.
+Compact underlined tabs switch settings areas; pane
 backgrounds and borders group content, selected groups have a stronger fill,
 and Appearance fills the available width.
 Navigation, Chat display, and Sidebar use a compact group list alongside the form.
+Network and group lists scroll independently from their forms. Draft status,
+Revert, Apply, and Close remain below the scrolling content.
 
 No change to Halloy’s brand, chat layout, IRC engine, or configuration format is
 part of this request. The fork keeps the upstream license and attribution.

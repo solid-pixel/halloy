@@ -665,7 +665,7 @@ impl Settings {
                             .into(),
                     };
                     container(content)
-                        .padding(16)
+                        .padding(12)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .style(style::pane)
@@ -724,14 +724,14 @@ impl Settings {
                     .style(theme::text::secondary),
                     space::horizontal(),
                     button("Revert changes")
-                        .padding([8, 12])
+                        .padding([6, 10])
                         .style(style::button)
                         .on_press_maybe(
                             (dirty && !self.saving).then_some(Message::Revert)
                         ),
                     button(if self.saving { "Saving…" } else { "Apply" })
                         .style(style::primary_button)
-                        .padding([8, 20])
+                        .padding([6, 16])
                         .on_press_maybe(
                             (dirty && !self.saving && !downloading)
                                 .then_some(Message::Apply)
@@ -744,9 +744,14 @@ impl Settings {
         }
         let content = container(
             column![heading, tabs, body, rule::horizontal(1), footer]
-                .spacing(16),
+                .spacing(12),
         )
-        .padding(24)
+        .padding(iced::Padding {
+            top: 24.0,
+            right: 16.0,
+            bottom: 16.0,
+            left: 16.0,
+        })
         .width(Length::Fill)
         .height(Length::Fill)
         .style(theme::container::root);
@@ -817,24 +822,26 @@ impl Settings {
                     Field::Server,
                     false
                 ),
-                row![
-                    container(field(
-                        "Port",
-                        "Automatic",
-                        &network.port,
-                        Field::Port,
-                        false
-                    ))
-                    .width(150),
-                    container(
+                labelled_width(
+                    "Port",
+                    row![
+                        container(input_field(
+                            "Automatic",
+                            &network.port,
+                            Field::Port,
+                            false
+                        ))
+                        .width(104),
                         checkbox(network.use_tls)
                             .label("Use TLS")
                             .on_toggle(Message::Tls)
-                            .style(style::checkbox)
-                    )
-                    .padding(iced::padding::top(25))
-                ]
-                .spacing(16),
+                            .style(style::checkbox),
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .into(),
+                    260.0,
+                ),
                 field(
                     "Nickname",
                     "Your nickname",
@@ -857,18 +864,22 @@ impl Settings {
                 text("Authentication")
                     .font(font::PRIMARY_BOLD.clone())
                     .size(16),
-                pick_list(
-                    Some(network.authentication),
-                    authentication,
-                    Authentication::to_string
-                )
-                .on_select(Message::Authentication)
-                .style(style::pick_list)
-                .menu_style(style::menu)
-                .width(Length::Fill)
-                .padding(8),
+                labelled(
+                    "Method",
+                    pick_list(
+                        Some(network.authentication),
+                        authentication,
+                        Authentication::to_string
+                    )
+                    .on_select(Message::Authentication)
+                    .style(style::pick_list)
+                    .menu_style(style::menu)
+                    .width(Length::Fill)
+                    .padding(6)
+                    .into()
+                ),
             ]
-            .spacing(12);
+            .spacing(10);
             match network.authentication {
                 Authentication::Sasl => {
                     form = form.push(field(
@@ -928,17 +939,17 @@ impl Settings {
         };
         row![
             container(list)
-                .padding(12)
-                .width(180)
+                .padding(8)
+                .width(164)
                 .height(Length::Fill)
                 .style(style::pane),
             container(form)
-                .padding(16)
+                .padding(12)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(style::pane),
         ]
-        .spacing(16)
+        .spacing(12)
         .height(Length::Fill)
         .into()
     }
@@ -951,14 +962,18 @@ impl Settings {
         }
         let mut form = column![
             text("Theme").size(16).font(font::PRIMARY_BOLD.clone()),
-            pick_list(Some(a.mode), modes, ThemeMode::to_string)
-                .on_select(Message::ThemeMode)
-                .style(style::pick_list)
-                .menu_style(style::menu)
-                .width(Length::Fill)
-                .padding(8),
+            labelled(
+                "Mode",
+                pick_list(Some(a.mode), modes, ThemeMode::to_string)
+                    .on_select(Message::ThemeMode)
+                    .style(style::pick_list)
+                    .menu_style(style::menu)
+                    .width(Length::Fill)
+                    .padding(6)
+                    .into()
+            ),
         ]
-        .spacing(12);
+        .spacing(10);
         match a.mode {
             ThemeMode::Single => {
                 form = form.push(labelled(
@@ -972,7 +987,7 @@ impl Settings {
                     .style(style::pick_list)
                     .menu_style(style::menu)
                     .width(Length::Fill)
-                    .padding(8)
+                    .padding(6)
                     .into(),
                 ));
             }
@@ -989,7 +1004,7 @@ impl Settings {
                         .style(style::pick_list)
                         .menu_style(style::menu)
                         .width(Length::Fill)
-                        .padding(8)
+                        .padding(6)
                         .into(),
                     ))
                     .push(labelled(
@@ -1003,7 +1018,7 @@ impl Settings {
                         .style(style::pick_list)
                         .menu_style(style::menu)
                         .width(Length::Fill)
-                        .padding(8)
+                        .padding(6)
                         .into(),
                     ));
             }
@@ -1011,20 +1026,25 @@ impl Settings {
                 form = form.push(text("Your theme configuration is managed in the config file. Choose a mode above to replace it.").style(theme::text::secondary));
             }
         }
-        form = form
-            .push(action("Browse and download themes", Message::BrowseThemes));
+        form = form.push(
+            container(action(
+                "Browse and download themes",
+                Message::BrowseThemes,
+            ))
+            .padding(iced::padding::left(180)),
+        );
         form = form.push(text("Theme selections preview throughout Halloy. Apply saves your choice; Revert restores the saved appearance.").style(theme::text::secondary))
             .push(rule::horizontal(1))
             .push(text("Font").size(16).font(font::PRIMARY_BOLD.clone()))
             .push(field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false))
-            .push(row![field("Text size", "13", &a.font_size, Field::FontSize, false), field("Line height", "1.3", &a.line_height, Field::LineHeight, false)].spacing(16))
+            .push(labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(96), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(96)].spacing(12).align_y(Alignment::Center).into(), 320.0))
             .push(text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").style(theme::text::secondary))
             .push(rule::horizontal(1))
             .push(text("Layout").size(16).font(font::PRIMARY_BOLD.clone()))
             .push(field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false))
             .push(text("Settings stays at its default scale so you can always adjust this value.").style(theme::text::secondary));
         container(form)
-            .width(Length::Fill)
+            .width(Length::Fill.max(740))
             .padding(iced::padding::right(12))
             .into()
     }
@@ -1032,7 +1052,7 @@ impl Settings {
 
 fn action<'a, M: Clone + 'a>(label: &'a str, message: M) -> Element<'a, M> {
     button(text(label))
-        .padding([8, 12])
+        .padding([6, 10])
         .style(style::button)
         .on_press(message)
         .into()
@@ -1049,7 +1069,7 @@ fn section_tab<'a>(
         } else {
             font::PRIMARY.clone()
         }))
-        .padding([10, 16])
+        .padding([6, 12])
         .width(Length::Fill)
         .style(move |theme, status| style::section_tab(theme, status, selected))
         .on_press(message),
@@ -1060,10 +1080,10 @@ fn section_tab<'a>(
     ]
     .spacing(0)
     .width(match label {
-        "Networks" => 112,
-        "Appearance" | "Navigation" => 124,
-        "Chat display" => 132,
-        _ => 100,
+        "Networks" => 104,
+        "Appearance" | "Navigation" => 116,
+        "Chat display" => 128,
+        _ => 92,
     })
     .into()
 }
@@ -1074,7 +1094,7 @@ fn tab<'a>(
     message: Message,
 ) -> Element<'a, Message> {
     button(text(label))
-        .padding([8, 12])
+        .padding([6, 10])
         .width(Length::Fill)
         .style(move |theme, status| style::tab(theme, status, selected))
         .on_press(message)
@@ -1088,25 +1108,53 @@ fn field<'a>(
     field: Field,
     secret: bool,
 ) -> Element<'a, Message> {
-    labelled(
-        label,
-        text_input(placeholder, value)
-            .style(input_style)
-            .on_input(move |value| Message::Edit(field, value))
-            .secure(secret)
-            .padding(8)
-            .into(),
-    )
+    let width = match field {
+        Field::Port | Field::FontSize | Field::LineHeight | Field::Scale => {
+            104.0
+        }
+        Field::Nickname | Field::Username => 240.0,
+        Field::Channels => 420.0,
+        Field::Server => 360.0,
+        _ => 300.0,
+    };
+    labelled_width(label, input_field(placeholder, value, field, secret), width)
+}
+
+fn input_field<'a>(
+    placeholder: &'a str,
+    value: &'a str,
+    field: Field,
+    secret: bool,
+) -> Element<'a, Message> {
+    text_input(placeholder, value)
+        .style(input_style)
+        .on_input(move |value| Message::Edit(field, value))
+        .secure(secret)
+        .padding(6)
+        .width(Length::Fill)
+        .into()
 }
 
 fn labelled<'a>(
     label: &'a str,
     control: Element<'a, Message>,
 ) -> Element<'a, Message> {
-    column![text(label), control]
-        .spacing(6)
-        .width(Length::Fill)
-        .into()
+    labelled_width(label, control, 320.0)
+}
+
+fn labelled_width<'a>(
+    label: &'a str,
+    control: Element<'a, Message>,
+    max_width: f32,
+) -> Element<'a, Message> {
+    row![
+        text(label).width(168),
+        container(control).width(Length::Fill.max(max_width))
+    ]
+    .spacing(12)
+    .align_y(Alignment::Center)
+    .width(Length::Fill)
+    .into()
 }
 
 fn input_style(

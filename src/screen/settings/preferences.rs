@@ -1,12 +1,12 @@
 use data::config::settings::Settings as Draft;
 use data::config::settings::preferences::{Area, Field, Kind};
-use iced::Length;
 use iced::widget::{
     button, checkbox, column, container, pick_list, row, scrollable, text,
     text_input,
 };
+use iced::{Alignment, Length};
 
-use super::{Message, Settings, action, labelled, style};
+use super::{Message, Settings, action, labelled, labelled_width, style};
 use crate::widget::Element;
 use crate::{font, theme};
 
@@ -32,7 +32,7 @@ impl Settings {
                 } else {
                     group
                 }))
-                .padding([8, 10])
+                .padding([6, 8])
                 .width(Length::Fill)
                 .style(move |theme, status| {
                     style::tab(theme, status, index == selected)
@@ -43,7 +43,7 @@ impl Settings {
         let group = groups.get(selected).copied().unwrap_or("");
         let mut form =
             column![text(group).size(16).font(font::PRIMARY_BOLD.clone())]
-                .spacing(16);
+                .spacing(10);
         if area == Area::Navigation && selected == 0 {
             form = form.push(action("Reuse the current pane for everything", Message::ReuseCurrentPane))
                 .push(text("After applying, close extra panes to use one-pane navigation.").style(theme::text::secondary));
@@ -52,7 +52,7 @@ impl Settings {
             form = form.push(text("Channel-specific settings can override these global defaults.").style(theme::text::secondary));
         }
         if area == Area::Sidebar && selected == 0 {
-            form = form.push(labelled(
+            form = form.push(labelled_width(
                 "Position",
                 pick_list(
                     Some(draft.appearance.sidebar_position.clone()),
@@ -67,9 +67,10 @@ impl Settings {
                 .on_select(Message::Sidebar)
                 .style(style::pick_list)
                 .menu_style(style::menu)
-                .padding(8)
+                .padding(6)
                 .width(Length::Fill)
                 .into(),
+                160.0,
             ));
         }
         for (index, field) in draft.preferences.fields.iter().enumerate() {
@@ -84,7 +85,7 @@ impl Settings {
                     .height(Length::Fill)
             )
             .padding(8)
-            .width(172)
+            .width(164)
             .height(Length::Fill)
             .style(style::pane),
             container(
@@ -92,12 +93,12 @@ impl Settings {
                     .style(style::scrollable)
                     .height(Length::Fill)
             )
-            .padding(16)
+            .padding(12)
             .width(Length::Fill)
             .height(Length::Fill)
             .style(style::pane),
         ]
-        .spacing(16)
+        .spacing(12)
         .height(Length::Fill)
         .into()
     }
@@ -142,7 +143,7 @@ fn control(index: usize, field: &Field) -> Element<'_, Message> {
                     })
                     .style(style::pick_list)
                     .menu_style(style::menu)
-                    .padding(8)
+                    .padding(6)
                     .width(Length::Fill)
                     .into(),
             )
@@ -170,27 +171,48 @@ fn control(index: usize, field: &Field) -> Element<'_, Message> {
             })
             .style(style::pick_list)
             .menu_style(style::menu)
-            .padding(8)
+            .padding(6)
             .width(Length::Fill)
             .into(),
         ),
-        _ => labelled(
-            field.spec.label,
-            text_input("Default", &field.value)
-                .style(style::input)
-                .padding(8)
-                .on_input(move |value| Message::Preference(index, value))
-                .into(),
-        ),
+        _ => {
+            let width = match field.spec.kind {
+                Kind::Integer { .. } | Kind::Float { .. } => 104.0,
+                Kind::Pair => 128.0,
+                _ => 240.0,
+            };
+            let input: Element<'_, Message> =
+                text_input("Default", &field.value)
+                    .style(style::input)
+                    .padding(6)
+                    .on_input(move |value| Message::Preference(index, value))
+                    .width(Length::Fill)
+                    .into();
+            let (input, width) = if field.spec.help == "Pixels" {
+                (
+                    row![
+                        container(input).width(Length::Fill.max(width)),
+                        text("px").style(theme::text::secondary)
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .into(),
+                    width + 32.0,
+                )
+            } else {
+                (input, width)
+            };
+            labelled_width(field.spec.label, input, width)
+        }
     };
-    if field.spec.help.is_empty() {
+    if field.spec.help.is_empty() || field.spec.help == "Pixels" {
         widget
     } else {
         column![
             widget,
             text(field.spec.help).size(12).style(theme::text::secondary)
         ]
-        .spacing(6)
+        .spacing(4)
         .into()
     }
 }

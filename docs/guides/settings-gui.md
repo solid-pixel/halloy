@@ -6,6 +6,15 @@ choose **Configuration: Open Settings**
 in the command bar, or press **⌘,** on macOS / **Ctrl+,** on Windows and Linux.
 The welcome screen also has an **Open Settings** button.
 
+Area tabs switch between settings. Networks and the grouped preference areas
+show a list beside the selected form; each side scrolls independently.
+Appearance uses the full content pane. Form labels sit beside their controls,
+with short numeric fields and wider text fields and pickers. Controls adjust to
+the available width, with a limit suited to their content.
+
+The footer keeps the draft status, **Revert changes**, **Apply**, and **Close**
+visible while forms scroll.
+
 ## Networks
 
 Add, rename, or remove networks. Each network has a server hostname, an optional
