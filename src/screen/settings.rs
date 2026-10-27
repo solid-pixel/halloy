@@ -608,38 +608,6 @@ impl Settings {
             action("Open config file", Message::OpenFile)
         ]
         .align_y(Alignment::Center);
-        let tabs = column![
-            row![
-                section_tab(
-                    "Networks",
-                    self.section == Section::Networks,
-                    Message::Section(Section::Networks)
-                ),
-                section_tab(
-                    "Appearance",
-                    self.section == Section::Appearance,
-                    Message::Section(Section::Appearance)
-                ),
-                section_tab(
-                    "Navigation",
-                    self.section == Section::Navigation,
-                    Message::Section(Section::Navigation)
-                ),
-                section_tab(
-                    "Chat display",
-                    self.section == Section::Chat,
-                    Message::Section(Section::Chat)
-                ),
-                section_tab(
-                    "Sidebar",
-                    self.section == Section::Sidebar,
-                    Message::Section(Section::Sidebar)
-                ),
-            ]
-            .spacing(8),
-            rule::horizontal(1),
-        ]
-        .spacing(0);
         let body: Element<_> = match &self.draft {
             Ok(draft) => match self.section {
                 Section::Networks => self.networks(draft),
@@ -665,10 +633,9 @@ impl Settings {
                             .into(),
                     };
                     container(content)
-                        .padding(12)
+                        .padding(iced::padding::right(8))
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .style(style::pane)
                         .into()
                 }
             },
@@ -743,8 +710,15 @@ impl Settings {
             );
         }
         let content = container(
-            column![heading, tabs, body, rule::horizontal(1), footer]
-                .spacing(12),
+            column![
+                heading,
+                row![self.navigation(), body]
+                    .spacing(16)
+                    .height(Length::Fill),
+                rule::horizontal(1),
+                footer
+            ]
+            .spacing(12),
         )
         .padding(iced::Padding {
             top: 24.0,
@@ -778,23 +752,75 @@ impl Settings {
         })
     }
 
-    fn networks<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
-        let mut list = column![].spacing(4);
-        for (index, network) in draft.networks.iter().enumerate() {
-            list = list.push(tab(
-                &network.name,
-                self.selected == Some(index),
-                Message::Select(index),
+    fn navigation(&self) -> Element<'_, Message> {
+        let mut navigation = column![].spacing(4);
+        for (section, label) in [
+            (Section::Networks, "Networks"),
+            (Section::Appearance, "Appearance"),
+            (Section::Navigation, "Navigation"),
+            (Section::Chat, "Chat display"),
+            (Section::Sidebar, "Sidebar"),
+        ] {
+            let selected = self.section == section;
+            navigation = navigation.push(section_tab(
+                label,
+                selected,
+                Message::Section(section),
             ));
+            if !selected {
+                continue;
+            }
+            let Ok(draft) = &self.draft else {
+                continue;
+            };
+            let mut children = column![].spacing(2);
+            if section == Section::Networks {
+                for (index, network) in draft.networks.iter().enumerate() {
+                    children = children.push(tab(
+                        &network.name,
+                        self.selected == Some(index),
+                        Message::Select(index),
+                    ));
+                }
+                children = children.push(action("Add network", Message::Add));
+            } else if let Some(area) = preference_area(section) {
+                for (index, group) in
+                    preferences::groups(draft, area).iter().enumerate()
+                {
+                    let label = if *group == "Highlights and typing" {
+                        "Highlights & typing"
+                    } else {
+                        group
+                    };
+                    children = children.push(tab(
+                        label,
+                        self.preference_group == index,
+                        Message::PreferenceGroup(index),
+                    ));
+                }
+            } else {
+                continue;
+            }
+            navigation =
+                navigation.push(container(children).padding(iced::Padding {
+                    left: 12.0,
+                    bottom: 8.0,
+                    ..Default::default()
+                }));
         }
-        let list = column![
-            scrollable(list)
+        container(
+            scrollable(navigation)
                 .style(style::scrollable)
                 .height(Length::Fill),
-            action("Add network", Message::Add)
-        ]
-        .spacing(12)
-        .width(Length::Fill);
+        )
+        .padding(8)
+        .width(184)
+        .height(Length::Fill)
+        .style(style::pane)
+        .into()
+    }
+
+    fn networks<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
         let form: Element<_> = if let Some(network) =
             self.selected.and_then(|index| draft.networks.get(index))
         {
@@ -806,21 +832,20 @@ impl Settings {
             if draft.has_advanced_authentication(network) {
                 authentication.push(Authentication::Advanced);
             }
-            let mut form = column![
-                text("Connection").font(font::PRIMARY_BOLD.clone()).size(16),
+            let connection = vec![
                 field(
                     "Network name",
                     "e.g. Libera",
                     &network.name,
                     Field::Name,
-                    false
+                    false,
                 ),
                 field(
                     "Server",
                     "irc.libera.chat",
                     &network.server,
                     Field::Server,
-                    false
+                    false,
                 ),
                 labelled_width(
                     "Port",
@@ -847,42 +872,38 @@ impl Settings {
                     "Your nickname",
                     &network.nickname,
                     Field::Nickname,
-                    false
+                    false,
                 ),
                 field(
                     "Join channels on connect",
                     "#halloy, #rust",
                     &network.channels,
                     Field::Channels,
-                    false
+                    false,
                 ),
                 checkbox(network.autoconnect)
                     .label("Connect automatically on launch")
                     .on_toggle(Message::Autoconnect)
-                    .style(style::checkbox),
-                rule::horizontal(1),
-                text("Authentication")
-                    .font(font::PRIMARY_BOLD.clone())
-                    .size(16),
-                labelled(
-                    "Method",
-                    pick_list(
-                        Some(network.authentication),
-                        authentication,
-                        Authentication::to_string
-                    )
-                    .on_select(Message::Authentication)
-                    .style(style::pick_list)
-                    .menu_style(style::menu)
-                    .width(Length::Fill)
-                    .padding(6)
-                    .into()
-                ),
-            ]
-            .spacing(10);
+                    .style(style::checkbox)
+                    .into(),
+            ];
+            let mut authentication_rows = vec![labelled(
+                "Method",
+                pick_list(
+                    Some(network.authentication),
+                    authentication,
+                    Authentication::to_string,
+                )
+                .on_select(Message::Authentication)
+                .style(style::pick_list)
+                .menu_style(style::menu)
+                .width(Length::Fill)
+                .padding(6)
+                .into(),
+            )];
             match network.authentication {
                 Authentication::Sasl => {
-                    form = form.push(field(
+                    authentication_rows.push(field(
                         "Account name",
                         "Use nickname",
                         &network.username,
@@ -891,7 +912,7 @@ impl Settings {
                     ));
                 }
                 Authentication::Advanced => {
-                    form = form.push(text("Certificate, keyring and command settings are managed in the config file. Choosing another method replaces this network’s authentication settings.").style(theme::text::secondary));
+                    authentication_rows.push(text("Certificate, keyring and command settings are managed in the config file. Choosing another method replaces this network’s authentication settings.").style(theme::text::secondary).into());
                 }
                 _ => {}
             }
@@ -899,9 +920,16 @@ impl Settings {
                 network.authentication,
                 Authentication::Sasl | Authentication::NickServ
             ) {
-                form = form.push(field("Password", "Account password", &network.password, Field::Password, true))
-                    .push(text("Passwords entered here are stored in config.toml. Use the config file for keyring or password-command authentication.").style(theme::text::secondary));
+                authentication_rows.push(column![field("Password", "Account password", &network.password, Field::Password, true), text("Passwords entered here are stored in config.toml. Use the config file for keyring or password-command authentication.").size(12).style(theme::text::secondary)].spacing(4).into());
             }
+            let mut form = column![
+                text(&network.name)
+                    .font(font::PRIMARY_BOLD.clone())
+                    .size(16),
+                settings_group("Connection", connection),
+                settings_group("Authentication", authentication_rows),
+            ]
+            .spacing(16);
             form = form.push(text("Existing connections use changed server and authentication settings after reconnecting.").style(theme::text::secondary));
             if self.confirm_remove {
                 form = form
@@ -937,21 +965,10 @@ impl Settings {
             .center(Length::Fill)
             .into()
         };
-        row![
-            container(list)
-                .padding(8)
-                .width(164)
-                .height(Length::Fill)
-                .style(style::pane),
-            container(form)
-                .padding(12)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(style::pane),
-        ]
-        .spacing(12)
-        .height(Length::Fill)
-        .into()
+        container(form)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn appearance<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
@@ -960,23 +977,19 @@ impl Settings {
         if draft.has_configured_theme() {
             modes.push(ThemeMode::Configured);
         }
-        let mut form = column![
-            text("Theme").size(16).font(font::PRIMARY_BOLD.clone()),
-            labelled(
-                "Mode",
-                pick_list(Some(a.mode), modes, ThemeMode::to_string)
-                    .on_select(Message::ThemeMode)
-                    .style(style::pick_list)
-                    .menu_style(style::menu)
-                    .width(Length::Fill)
-                    .padding(6)
-                    .into()
-            ),
-        ]
-        .spacing(10);
+        let mut theme_rows = vec![labelled(
+            "Mode",
+            pick_list(Some(a.mode), modes, ThemeMode::to_string)
+                .on_select(Message::ThemeMode)
+                .style(style::pick_list)
+                .menu_style(style::menu)
+                .width(Length::Fill)
+                .padding(6)
+                .into(),
+        )];
         match a.mode {
             ThemeMode::Single => {
-                form = form.push(labelled(
+                theme_rows.push(labelled(
                     "Theme",
                     pick_list(
                         Some(a.theme.clone()),
@@ -992,62 +1005,102 @@ impl Settings {
                 ));
             }
             ThemeMode::System => {
-                form = form
-                    .push(labelled(
-                        "Light appearance",
-                        pick_list(
-                            Some(a.light.clone()),
-                            self.themes.clone(),
-                            String::clone,
-                        )
-                        .on_select(Message::Light)
-                        .style(style::pick_list)
-                        .menu_style(style::menu)
-                        .width(Length::Fill)
-                        .padding(6)
-                        .into(),
-                    ))
-                    .push(labelled(
-                        "Dark appearance",
-                        pick_list(
-                            Some(a.dark.clone()),
-                            self.themes.clone(),
-                            String::clone,
-                        )
-                        .on_select(Message::Dark)
-                        .style(style::pick_list)
-                        .menu_style(style::menu)
-                        .width(Length::Fill)
-                        .padding(6)
-                        .into(),
-                    ));
+                theme_rows.push(labelled(
+                    "Light appearance",
+                    pick_list(
+                        Some(a.light.clone()),
+                        self.themes.clone(),
+                        String::clone,
+                    )
+                    .on_select(Message::Light)
+                    .style(style::pick_list)
+                    .menu_style(style::menu)
+                    .width(Length::Fill)
+                    .padding(6)
+                    .into(),
+                ));
+                theme_rows.push(labelled(
+                    "Dark appearance",
+                    pick_list(
+                        Some(a.dark.clone()),
+                        self.themes.clone(),
+                        String::clone,
+                    )
+                    .on_select(Message::Dark)
+                    .style(style::pick_list)
+                    .menu_style(style::menu)
+                    .width(Length::Fill)
+                    .padding(6)
+                    .into(),
+                ));
             }
             ThemeMode::Configured => {
-                form = form.push(text("Your theme configuration is managed in the config file. Choose a mode above to replace it.").style(theme::text::secondary));
+                theme_rows.push(text("Your theme configuration is managed in the config file. Choose a mode above to replace it.").style(theme::text::secondary).into());
             }
         }
-        form = form.push(
-            container(action(
-                "Browse and download themes",
-                Message::BrowseThemes,
-            ))
-            .padding(iced::padding::left(180)),
-        );
-        form = form.push(text("Theme selections preview throughout Halloy. Apply saves your choice; Revert restores the saved appearance.").style(theme::text::secondary))
-            .push(rule::horizontal(1))
-            .push(text("Font").size(16).font(font::PRIMARY_BOLD.clone()))
-            .push(field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false))
-            .push(labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(96), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(96)].spacing(12).align_y(Alignment::Center).into(), 320.0))
-            .push(text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").style(theme::text::secondary))
-            .push(rule::horizontal(1))
-            .push(text("Layout").size(16).font(font::PRIMARY_BOLD.clone()))
-            .push(field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false))
-            .push(text("Settings stays at its default scale so you can always adjust this value.").style(theme::text::secondary));
+        theme_rows.push(column![
+            action("Browse and download themes", Message::BrowseThemes),
+            text("Theme selections preview throughout Halloy. Apply saves your choice; Revert restores the saved appearance.").size(12).style(theme::text::secondary)
+        ].spacing(6).into());
+        let form = column![
+            text("Appearance").size(16).font(font::PRIMARY_BOLD.clone()),
+            settings_group("Theme", theme_rows),
+            settings_group("Font", vec![
+                field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false),
+                column![labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0), text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
+            ]),
+            settings_group("Layout", vec![
+                column![field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false), text("Settings stays at its default scale so you can always adjust this value.").size(12).style(theme::text::secondary)].spacing(4).into(),
+            ]),
+        ].spacing(16);
         container(form)
             .width(Length::Fill.max(740))
             .padding(iced::padding::right(12))
             .into()
     }
+}
+
+fn preference_area(
+    section: Section,
+) -> Option<data::config::settings::preferences::Area> {
+    use data::config::settings::preferences::Area;
+    match section {
+        Section::Navigation => Some(Area::Navigation),
+        Section::Chat => Some(Area::Chat),
+        Section::Sidebar => Some(Area::Sidebar),
+        _ => None,
+    }
+}
+
+fn settings_group<'a>(
+    title: &'a str,
+    rows: Vec<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    column![
+        text(title).font(font::PRIMARY_BOLD.clone()),
+        settings_rows(rows)
+    ]
+    .spacing(6)
+    .width(Length::Fill)
+    .into()
+}
+
+fn settings_rows<'a>(rows: Vec<Element<'a, Message>>) -> Element<'a, Message> {
+    let mut content = column![].spacing(0);
+    for (index, row) in rows.into_iter().enumerate() {
+        if index > 0 {
+            content = content.push(
+                container(rule::horizontal(1))
+                    .padding(iced::padding::horizontal(12)),
+            );
+        }
+        content =
+            content.push(container(row).padding([8, 12]).width(Length::Fill));
+    }
+    container(content)
+        .width(Length::Fill)
+        .style(style::pane)
+        .into()
 }
 
 fn action<'a, M: Clone + 'a>(label: &'a str, message: M) -> Element<'a, M> {
@@ -1063,28 +1116,15 @@ fn section_tab<'a>(
     selected: bool,
     message: Message,
 ) -> Element<'a, Message> {
-    column![
-        button(text(label).font(if selected {
-            font::PRIMARY_BOLD.clone()
-        } else {
-            font::PRIMARY.clone()
-        }))
-        .padding([6, 12])
-        .width(Length::Fill)
-        .style(move |theme, status| style::section_tab(theme, status, selected))
-        .on_press(message),
-        container(space::horizontal())
-            .height(2)
-            .width(Length::Fill)
-            .style(move |theme| style::tab_indicator(theme, selected)),
-    ]
-    .spacing(0)
-    .width(match label {
-        "Networks" => 104,
-        "Appearance" | "Navigation" => 116,
-        "Chat display" => 128,
-        _ => 92,
-    })
+    button(text(label).font(if selected {
+        font::PRIMARY_BOLD.clone()
+    } else {
+        font::PRIMARY.clone()
+    }))
+    .padding([6, 8])
+    .width(Length::Fill)
+    .style(move |theme, status| style::section_tab(theme, status, selected))
+    .on_press(message)
     .into()
 }
 
@@ -1148,7 +1188,7 @@ fn labelled_width<'a>(
     max_width: f32,
 ) -> Element<'a, Message> {
     row![
-        text(label).width(168),
+        text(label).width(160),
         container(control).width(Length::Fill.max(max_width))
     ]
     .spacing(12)

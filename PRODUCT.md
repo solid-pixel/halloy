@@ -52,11 +52,18 @@ controls in aligned rows. Controls adapt to the available space and stop at
 widths suited to their content; numeric fields stay short, while text fields
 and pickers allow longer values. Density comes from compact row spacing and
 padding while retaining the existing text hierarchy.
-Compact underlined tabs switch settings areas; pane
-backgrounds and borders group content, selected groups have a stronger fill,
-and Appearance fills the available width.
-Navigation, Chat display, and Sidebar use a compact group list alongside the form.
-Network and group lists scroll independently from their forms. Draft status,
+A single vertical navigation pane on the left contains all settings areas.
+The active area expands its network list or preference groups beneath its
+heading; indented children distinguish that level from the area headings.
+The selected network or group opens in the form to the right. Appearance and
+its theme browser use that same right pane. Navigation and forms scroll
+independently, and the two columns remain available at the minimum window size.
+
+Related settings share flat groups with a faint palette-derived background,
+a visible border, and inset separators between rows. The Networks form separates
+Connection and Authentication; Appearance separates Theme, Font, and Layout.
+Preference areas show the selected group's rows together. Group headings and
+space between groups provide hierarchy without glass effects. Draft status,
 Revert, Apply, and Close remain below the scrolling content.
 
 No change to Halloy’s brand, chat layout, IRC engine, or configuration format is

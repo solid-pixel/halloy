@@ -311,7 +311,7 @@ pub fn section_tab(
     selected: bool,
 ) -> button_widget::Style {
     let background = surface(
-        theme.styles().general.background,
+        pane_background(theme),
         theme.styles().text.primary.color,
         if status == button_widget::Status::Hovered {
             1.16
@@ -329,31 +329,9 @@ pub fn section_tab(
             4.5,
         ),
         border: Border {
-            radius: iced::border::Radius {
-                top_left: 4.0,
-                top_right: 4.0,
-                bottom_left: 0.0,
-                bottom_right: 0.0,
-            },
+            radius: 4.0.into(),
             ..Border::default()
         },
-        ..Default::default()
-    }
-}
-
-pub fn tab_indicator(
-    theme: &Theme,
-    selected: bool,
-) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: selected.then(|| {
-            contrast(
-                theme.styles().buffer.url.color,
-                theme.styles().general.background,
-                3.0,
-            )
-            .into()
-        }),
         ..Default::default()
     }
 }

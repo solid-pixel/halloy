@@ -6,11 +6,16 @@ choose **Configuration: Open Settings**
 in the command bar, or press **⌘,** on macOS / **Ctrl+,** on Windows and Linux.
 The welcome screen also has an **Open Settings** button.
 
-Area tabs switch between settings. Networks and the grouped preference areas
-show a list beside the selected form; each side scrolls independently.
-Appearance uses the full content pane. Form labels sit beside their controls,
-with short numeric fields and wider text fields and pickers. Controls adjust to
-the available width, with a limit suited to their content.
+Choose an area in the navigation pane on the left. The active area expands its
+networks or preference groups beneath its heading; choose an indented item to
+open its form on the right. Appearance and its theme browser use the same right
+pane. Navigation and forms scroll independently, including at the minimum window
+size.
+
+Related settings appear in flat groups with a faint background, a border, and
+inset separators between rows. Form labels sit beside their controls, with short
+numeric fields and wider text fields and pickers. Controls adjust to the
+available width, with a limit suited to their content.
 
 The footer keeps the draft status, **Revert changes**, **Apply**, and **Close**
 visible while forms scroll.
@@ -75,10 +80,11 @@ splits; changing it does not rearrange existing panes.
 
 ## Chat display
 
-Use the group list to edit timestamps and date separators, repeated timestamps
-and nicknames, message spacing, backlog behavior, nickname colors and alignment,
-access levels, the user list, and the topic banner. Activity controls cover
-server messages, joins, parts, quits, nickname changes, and modes.
+Use the groups beneath **Chat display** to edit timestamps and date separators,
+repeated timestamps and nicknames, message spacing, backlog behavior, nickname
+colors and alignment, access levels, the user list, and the topic banner.
+Activity controls cover server messages, joins, parts, quits, nickname changes,
+and modes.
 
 Read markers, composer visibility, formatting, nickname display, draft
 persistence, completion order, emoji, and typing indicators have their own
@@ -129,5 +135,7 @@ connections are desired.
 Settings keeps the selected palette while improving text contrast, field and
 button outlines, and focus visibility. Inputs and pickers have visible fills
 against their panes; picker menus and unchecked boxes use the same control fill.
-Selected tabs and groups have stronger backgrounds. Chat windows show the
-supplied theme colors.
+The active area is bold with a stronger background; its selected network or
+preference group has a stronger fill and visible border. Settings groups stay
+flat, with space and headings separating them. Chat windows show the supplied
+theme colors.

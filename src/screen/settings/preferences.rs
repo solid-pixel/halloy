@@ -1,12 +1,13 @@
 use data::config::settings::Settings as Draft;
 use data::config::settings::preferences::{Area, Field, Kind};
 use iced::widget::{
-    button, checkbox, column, container, pick_list, row, scrollable, text,
-    text_input,
+    checkbox, column, container, pick_list, row, scrollable, text, text_input,
 };
 use iced::{Alignment, Length};
 
-use super::{Message, Settings, action, labelled, labelled_width, style};
+use super::{
+    Message, Settings, action, labelled, labelled_width, settings_rows, style,
+};
 use crate::widget::Element;
 use crate::{font, theme};
 
@@ -16,34 +17,13 @@ impl Settings {
         draft: &'a Draft,
         area: Area,
     ) -> Element<'a, Message> {
-        let mut groups = vec![];
-        for field in &draft.preferences.fields {
-            if field.spec.area == area && !groups.contains(&field.spec.group) {
-                groups.push(field.spec.group);
-            }
-        }
+        let groups = groups(draft, area);
         let selected =
             self.preference_group.min(groups.len().saturating_sub(1));
-        let mut navigation = column![].spacing(4);
-        for (index, group) in groups.iter().enumerate() {
-            navigation = navigation.push(
-                button(text(if *group == "Highlights and typing" {
-                    "Highlights & typing"
-                } else {
-                    group
-                }))
-                .padding([6, 8])
-                .width(Length::Fill)
-                .style(move |theme, status| {
-                    style::tab(theme, status, index == selected)
-                })
-                .on_press(Message::PreferenceGroup(index)),
-            );
-        }
         let group = groups.get(selected).copied().unwrap_or("");
         let mut form =
             column![text(group).size(16).font(font::PRIMARY_BOLD.clone())]
-                .spacing(10);
+                .spacing(12);
         if area == Area::Navigation && selected == 0 {
             form = form.push(action("Reuse the current pane for everything", Message::ReuseCurrentPane))
                 .push(text("After applying, close extra panes to use one-pane navigation.").style(theme::text::secondary));
@@ -51,8 +31,9 @@ impl Settings {
         if area == Area::Chat {
             form = form.push(text("Channel-specific settings can override these global defaults.").style(theme::text::secondary));
         }
+        let mut rows = vec![];
         if area == Area::Sidebar && selected == 0 {
-            form = form.push(labelled_width(
+            rows.push(labelled_width(
                 "Position",
                 pick_list(
                     Some(draft.appearance.sidebar_position.clone()),
@@ -75,33 +56,29 @@ impl Settings {
         }
         for (index, field) in draft.preferences.fields.iter().enumerate() {
             if field.spec.area == area && field.spec.group == group {
-                form = form.push(control(index, field));
+                rows.push(control(index, field));
             }
         }
-        row![
-            container(
-                scrollable(navigation)
-                    .style(style::scrollable)
-                    .height(Length::Fill)
-            )
-            .padding(8)
-            .width(164)
-            .height(Length::Fill)
-            .style(style::pane),
-            container(
-                scrollable(form.padding(iced::padding::right(12)))
-                    .style(style::scrollable)
-                    .height(Length::Fill)
-            )
-            .padding(12)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(style::pane),
-        ]
-        .spacing(12)
+        form = form.push(settings_rows(rows));
+        container(
+            scrollable(form.padding(iced::padding::right(12)))
+                .style(style::scrollable)
+                .height(Length::Fill),
+        )
+        .width(Length::Fill)
         .height(Length::Fill)
         .into()
     }
+}
+
+pub(super) fn groups(draft: &Draft, area: Area) -> Vec<&'static str> {
+    let mut groups = vec![];
+    for field in &draft.preferences.fields {
+        if field.spec.area == area && !groups.contains(&field.spec.group) {
+            groups.push(field.spec.group);
+        }
+    }
+    groups
 }
 
 fn control(index: usize, field: &Field) -> Element<'_, Message> {

@@ -318,13 +318,13 @@ impl Browser {
                                         } else {
                                             "Dark"
                                         })
-                                        .width(80),
+                                        .width(52),
                                         text(if self.is_installed(entry) {
                                             "Installed"
                                         } else {
                                             ""
                                         })
-                                        .width(100),
+                                        .width(80),
                                     ]
                                     .spacing(12)
                                     .align_y(Alignment::Center),
