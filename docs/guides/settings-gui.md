@@ -1,6 +1,7 @@
 # Settings GUI
 
-This fork adds Networks, Appearance, Navigation, Chat display, and Sidebar
+This fork adds Networks, Appearance, Navigation, Chat display, Sidebar,
+Notifications and sounds, Highlight rules, and Keyboard shortcuts
 to a native Settings window. Open **Settings** from the sidebar user menu,
 choose **Configuration: Open Settings**
 in the command bar, or press **⌘,** on macOS / **Ctrl+,** on Windows and Linux.
@@ -117,6 +118,62 @@ Halloy's defaults. Position changes apply immediately.
 Advanced values that do not fit a picker are shown as **Configured in file**.
 They stay intact until you choose a replacement. Only edited settings are
 written, including when the original file uses an older supported setting name.
+
+## Notifications and sounds
+
+Choose an event beneath **Notifications & sounds** to edit system notifications,
+window attention, content visibility, sounds, and the delay between notifications.
+All nine general event types are available. **Add channel rule** configures
+notifications for every message in a named channel; channel names may include dots.
+Select a channel rule to rename or remove it. Removal is staged until Apply and
+asks for confirmation.
+
+Sounds accept built-in names or custom sound filenames from Halloy's `sounds`
+folder. Use **Add built-in sound** to append a sound, or type names directly.
+Separate alternative sounds with semicolons; Halloy chooses one randomly.
+Empty notification sounds mean silence. The delay is in milliseconds; an empty
+field restores 500 ms. These controls configure future notifications; they do
+not send a test notification or play audio.
+
+Conditions have separate channel, user, and server lists. Separate names with
+semicolons, or enter `*` for every name in that scope. Includes take priority over
+excludes. To notify only for a list, exclude `*` in all relevant scopes, then add
+the allowed names to Include. Existing compound criteria and server-message
+conditions are preserved and remain configurable in the file.
+
+## Highlight rules
+
+**Nickname** controls case matching and inclusion/exclusion scopes for your
+nickname. To disable nickname highlights everywhere, exclude `*` in the channel,
+user, and server scopes. Includes can enable selected scopes again.
+
+**Add word rule** and **Add regex rule** create custom matches. A rule has an
+optional notification name, words or a regular expression, sounds, and conditions.
+Words and phrases use semicolons as separators; **Ignore case** applies to word
+rules. Regex rules use the existing regex syntax, including flags such as `(?i)`.
+The Match picker switches between the two types. An empty rule sound list uses
+the highlight notification sound. Invalid expressions reveal and focus their
+field when applying. Rules can be removed after confirmation or restored with
+Revert before applying.
+
+For lists in these areas, wrap an entry containing a literal semicolon in double
+quotes. Quoted strings use the same escapes as TOML strings. Existing lists are
+shown with quoting where needed, including bindings for the semicolon key.
+
+## Keyboard shortcuts
+
+The four groups cover all existing ordinary and message-focus actions. Edit a
+binding with Halloy's existing names, such as `command+k`, `ctrl+shift+k`, or
+`alt+up`. Separate alternatives with semicolons. Commas in shortcuts are literal:
+`command+,` can explicitly override the built-in Settings gesture.
+
+**Clear** disables that action; **Default** removes its override and restores
+Halloy's platform default. Conflicts and invalid bindings prevent saving and
+reveal the affected field. Resolve conflicts by changing or clearing one of the
+listed actions; changes are validated together so bindings can be swapped.
+Message selection retains its built-in plain arrow keys. Direction bindings also
+enter message selection from chat. Settings always consumes its own Cmd/Ctrl+,
+gesture before editable fields receive text.
 
 ## Saving
 

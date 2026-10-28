@@ -1,8 +1,9 @@
 # Halloy settings GUI fork
 
 This fork extends Halloy with graphical editing for Networks, Appearance,
-Navigation and panes, Chat display, and Sidebar. The user authorized these areas
-and explicitly requested Impeccable and Halloy’s existing design language.
+Navigation and panes, Chat display, Sidebar, Notifications and sounds, Highlight
+rules, and Keyboard shortcuts. The user authorized these areas and explicitly
+requested Impeccable and Halloy’s existing design language.
 
 The initial audience is desktop Halloy users who want to configure the client
 through forms. This audience is inferred from the request. Halloy supports
@@ -20,6 +21,12 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
   read markers, the composer, emoji, and typing indicators.
 - Sidebar: position, width, order, labels, spacing, unread and highlight
   indicators, typing indicators, and scrollbars.
+- Notifications: all existing general events and per-channel rules, system
+  notifications, attention, content, sounds, delays, and scope conditions.
+- Highlights: nickname case matching, named word/regex rules, case options,
+  sounds, and scope conditions. Existing compound criteria stay in the file.
+- Keyboard: all ordinary and message-focus actions, alternative bindings,
+  clearing and platform defaults, parser errors and conflict validation.
 - Appearance includes a browser for the official Halloy theme gallery: search,
   light/dark filters and downloads into the themes directory.
   Selecting a theme previews it across all app windows and changes the draft.

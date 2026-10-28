@@ -15,6 +15,7 @@ use crate::{Theme, font, open_url, theme, window};
 mod keyboard;
 use keyboard::{button, checkbox, pick_list};
 mod preferences;
+mod rules;
 mod style;
 mod theme_browser;
 
@@ -25,6 +26,9 @@ pub enum Section {
     Navigation,
     Chat,
     Sidebar,
+    Notifications,
+    Highlights,
+    Shortcuts,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,6 +73,13 @@ pub enum Message {
     Sidebar(String),
     PreferenceGroup(usize),
     Preference(usize, String),
+    RuleGroup(usize),
+    RuleEdit(usize, usize, String),
+    RuleReset(usize, usize),
+    RuleAdd(data::config::settings::rules::Area, bool),
+    RuleRemove,
+    RuleConfirmRemove,
+    RuleCancelRemove,
     ReuseCurrentPane,
     Apply,
     Saved(Result<String, String>),
@@ -92,6 +103,8 @@ pub struct Settings {
     draft: Result<Draft, String>,
     section: Section,
     preference_group: usize,
+    rule_group: usize,
+    confirm_rule_remove: bool,
     selected: Option<usize>,
     themes: Vec<String>,
     installed_themes: Vec<data::Theme>,
@@ -167,6 +180,8 @@ impl Settings {
                 draft,
                 section: Section::Networks,
                 preference_group: 0,
+                rule_group: 0,
+                confirm_rule_remove: false,
                 selected,
                 themes,
                 installed_themes,
@@ -280,6 +295,42 @@ impl Settings {
         {
             return (Task::none(), None);
         }
+        if self.confirm_close
+            && !matches!(
+                message,
+                Message::KeepEditing
+                    | Message::Discard
+                    | Message::Focus(_)
+                    | Message::Close
+                    | Message::Quit
+            )
+        {
+            return (Task::none(), None);
+        }
+        if self.confirm_remove
+            && !matches!(
+                message,
+                Message::ConfirmRemove
+                    | Message::CancelRemove
+                    | Message::Focus(_)
+                    | Message::Close
+                    | Message::Quit
+            )
+        {
+            return (Task::none(), None);
+        }
+        if self.confirm_rule_remove
+            && !matches!(
+                message,
+                Message::RuleConfirmRemove
+                    | Message::RuleCancelRemove
+                    | Message::Focus(_)
+                    | Message::Close
+                    | Message::Quit
+            )
+        {
+            return (Task::none(), None);
+        }
         match message {
             Message::BrowseThemes => {
                 self.refresh_themes();
@@ -363,7 +414,44 @@ impl Settings {
                         };
                         self.restart_needed |= draft.font_changed();
                         let networks_changed = draft.networks_changed();
+                        let selection =
+                            draft.rules.groups.get(self.rule_group).map(
+                                |selected| {
+                                    (
+                                        selected.area,
+                                        draft.rules.groups[..self.rule_group]
+                                            .iter()
+                                            .filter(|g| {
+                                                g.area == selected.area
+                                                    && !g.removed
+                                            })
+                                            .count(),
+                                    )
+                                },
+                            );
                         self.draft = Draft::parse(source);
+                        if let (Some((area, ordinal)), Ok(draft)) =
+                            (selection, &self.draft)
+                        {
+                            self.rule_group = draft
+                                .rules
+                                .groups
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, g)| g.area == area && !g.removed)
+                                .nth(ordinal)
+                                .map_or_else(
+                                    || {
+                                        draft
+                                            .rules
+                                            .groups
+                                            .iter()
+                                            .position(|g| g.area == area)
+                                            .unwrap_or(0)
+                                    },
+                                    |(index, _)| index,
+                                );
+                        }
                         self.pending_themes.clear();
                         self.status = Some(if self.restart_needed {
                             "Saved. Restart Halloy to apply font changes."
@@ -385,6 +473,7 @@ impl Settings {
                 if self.draft.as_ref().is_ok_and(Draft::is_dirty) {
                     self.confirm_close = true;
                     self.confirm_remove = false;
+                    self.confirm_rule_remove = false;
                     return (keyboard::step(false), None);
                 } else {
                     return (
@@ -419,6 +508,16 @@ impl Settings {
                 self.preview = None;
                 self.pending_themes.clear();
                 self.draft = Draft::load();
+                if let (Some(area), Ok(draft)) =
+                    (rules::area(self.section), &self.draft)
+                {
+                    self.rule_group = draft
+                        .rules
+                        .groups
+                        .iter()
+                        .position(|g| g.area == area && !g.removed)
+                        .unwrap_or(0);
+                }
                 self.refresh_themes();
                 self.selected = self
                     .draft
@@ -431,6 +530,7 @@ impl Settings {
                 self.status = None;
                 self.confirm_close = false;
                 self.confirm_remove = false;
+                self.confirm_rule_remove = false;
             }
             message => {
                 let Ok(draft) = &mut self.draft else {
@@ -441,12 +541,28 @@ impl Settings {
                     Message::Section(section) => {
                         self.section = section;
                         self.preference_group = 0;
+                        self.confirm_rule_remove = false;
+                        if let Some(area) = rules::area(section) {
+                            self.rule_group = draft
+                                .rules
+                                .groups
+                                .iter()
+                                .position(|g| g.area == area && !g.removed)
+                                .unwrap_or(0);
+                        }
                         self.browser = None;
                         self.confirm_remove = false;
                         return (
-                            keyboard::focus(format!(
-                                "settings-section-{section:?}"
-                            )),
+                            Task::batch([
+                                keyboard::focus(format!(
+                                    "settings-section-{section:?}"
+                                )),
+                                iced::widget::operation::snap_to(
+                                    "settings-form-scroll",
+                                    scrollable::RelativeOffset::START,
+                                    iced::widget::operation::Animation::Instant,
+                                ),
+                            ]),
                             None,
                         );
                     }
@@ -454,6 +570,87 @@ impl Settings {
                         self.preference_group = index;
                         return (
                             keyboard::focus(format!("settings-group-{index}")),
+                            None,
+                        );
+                    }
+                    Message::RuleGroup(index) => {
+                        self.rule_group = index;
+                        self.confirm_rule_remove = false;
+                        return (
+                            Task::batch([
+                                keyboard::focus(format!(
+                                    "settings-rule-group-{index}"
+                                )),
+                                iced::widget::operation::snap_to(
+                                    "settings-form-scroll",
+                                    scrollable::RelativeOffset::START,
+                                    iced::widget::operation::Animation::Instant,
+                                ),
+                            ]),
+                            None,
+                        );
+                    }
+                    Message::RuleEdit(group, field, value) => {
+                        if let Some(field) = draft
+                            .rules
+                            .groups
+                            .get_mut(group)
+                            .and_then(|g| g.fields.get_mut(field))
+                        {
+                            field.value = value;
+                            field.reset = false;
+                        }
+                    }
+                    Message::RuleReset(group, field) => {
+                        if let Some(field) = draft
+                            .rules
+                            .groups
+                            .get_mut(group)
+                            .and_then(|g| g.fields.get_mut(field))
+                        {
+                            field.value = field.default.clone();
+                            field.reset = true;
+                        }
+                    }
+                    Message::RuleAdd(area, regex) => {
+                        self.rule_group = draft.rules.add(area, regex);
+                        return (
+                            keyboard::focus(format!(
+                                "settings-rule-{}-0",
+                                self.rule_group
+                            )),
+                            None,
+                        );
+                    }
+                    Message::RuleRemove => {
+                        self.confirm_rule_remove = true;
+                        return (
+                            keyboard::focus("settings-action-Keep rule"),
+                            None,
+                        );
+                    }
+                    Message::RuleCancelRemove => {
+                        self.confirm_rule_remove = false;
+                        return (
+                            keyboard::focus("settings-action-Remove rule"),
+                            None,
+                        );
+                    }
+                    Message::RuleConfirmRemove => {
+                        let area = draft.rules.groups[self.rule_group].area;
+                        draft.rules.groups[self.rule_group].removed = true;
+                        self.rule_group = draft
+                            .rules
+                            .groups
+                            .iter()
+                            .position(|g| g.area == area && !g.removed)
+                            .unwrap_or(0);
+                        self.confirm_rule_remove = false;
+                        return (
+                            keyboard::focus(format!(
+                                "settings-rule-group-{}",
+                                self.rule_group
+                            )),
                             None,
                         );
                     }
@@ -697,6 +894,14 @@ impl Settings {
                 }
                 .id()
             }
+            ValidationTarget::Rule { group, field } => {
+                if let Ok(draft) = &self.draft {
+                    self.section =
+                        rules::section(draft.rules.groups[group].area);
+                    self.rule_group = group;
+                }
+                format!("settings-rule-{group}-{field}")
+            }
             ValidationTarget::Preference(index) => {
                 if let Ok(draft) = &self.draft
                     && let Some(field) = draft.preferences.fields.get(index)
@@ -718,6 +923,7 @@ impl Settings {
         self.browser = None;
         self.confirm_close = false;
         self.confirm_remove = false;
+        self.confirm_rule_remove = false;
         self.error = Some(error.message.clone());
         self.validation_error = Some(error);
         keyboard::focus(id)
@@ -733,6 +939,9 @@ impl Settings {
         let body: Element<_> = match &self.draft {
             Ok(draft) => match self.section {
                 Section::Networks => self.networks(draft),
+                Section::Notifications
+                | Section::Highlights
+                | Section::Shortcuts => self.rules(draft),
                 Section::Navigation => self.preferences(
                     draft,
                     data::config::settings::preferences::Area::Navigation,
@@ -832,7 +1041,9 @@ impl Settings {
                 .align_y(Alignment::Center),
             );
         }
-        let confirming = self.confirm_close || self.confirm_remove;
+        let confirming = self.confirm_close
+            || self.confirm_remove
+            || self.confirm_rule_remove;
         let heading: Element<_> = if confirming {
             keyboard::inactive(heading)
         } else {
@@ -848,11 +1059,12 @@ impl Settings {
         } else {
             body
         };
-        let footer: Element<_> = if self.confirm_remove {
-            keyboard::inactive(footer)
-        } else {
-            footer.into()
-        };
+        let footer: Element<_> =
+            if self.confirm_remove || self.confirm_rule_remove {
+                keyboard::inactive(footer)
+            } else {
+                footer.into()
+            };
         let content = container(
             column![
                 heading,
@@ -873,7 +1085,7 @@ impl Settings {
         .style(theme::container::root)
         .id(keyboard::ROOT);
         let escape = self.escape_message();
-        keyboard::shortcuts(content, move |key, modifiers| {
+        let content = keyboard::shortcuts(content, move |key, modifiers| {
             if key.as_ref() == key_press::Key::Named(key_press::Named::Escape) {
                 Some(escape.clone())
             } else if key.as_ref()
@@ -887,12 +1099,21 @@ impl Settings {
             } else {
                 None
             }
-        })
+        });
+        // Save is a window command, so editable widgets must not insert its text.
+        key_press::key_press_with(
+            content,
+            iced::keyboard::Key::Character("s".into()),
+            iced::keyboard::Modifiers::COMMAND,
+            || Message::Apply,
+        )
     }
 
     fn escape_message(&self) -> Message {
         if self.confirm_close {
             Message::KeepEditing
+        } else if self.confirm_rule_remove {
+            Message::RuleCancelRemove
         } else if self.confirm_remove {
             Message::CancelRemove
         } else if self.browser.is_some() {
@@ -910,6 +1131,9 @@ impl Settings {
             (Section::Navigation, "Navigation"),
             (Section::Chat, "Chat display"),
             (Section::Sidebar, "Sidebar"),
+            (Section::Notifications, "Notifications & sounds"),
+            (Section::Highlights, "Highlight rules"),
+            (Section::Shortcuts, "Keyboard shortcuts"),
         ] {
             let selected = self.section == section;
             navigation = navigation.push(section_tab(
@@ -937,6 +1161,20 @@ impl Settings {
                         label,
                         self.preference_group == index,
                         Message::PreferenceGroup(index),
+                    ));
+                }
+            } else if let Some(area) = rules::area(section) {
+                for (index, group) in draft
+                    .rules
+                    .groups
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, g)| g.area == area && !g.removed)
+                {
+                    children = children.push(tab_owned(
+                        group.label(),
+                        self.rule_group == index,
+                        Message::RuleGroup(index),
                     ));
                 }
             } else {
@@ -1415,6 +1653,23 @@ fn tab<'a>(
         .into()
 }
 
+fn tab_owned(
+    label: String,
+    selected: bool,
+    message: Message,
+) -> Element<'static, Message> {
+    let Message::RuleGroup(index) = message else {
+        unreachable!()
+    };
+    button(text(label))
+        .id(format!("settings-rule-group-{index}"))
+        .padding([6, 10])
+        .width(Length::Fill)
+        .style(move |theme, status| style::tab(theme, status, selected))
+        .on_press(Message::RuleGroup(index))
+        .into()
+}
+
 fn field_with_layout<'a>(
     label: &'a str,
     placeholder: &'a str,
@@ -1522,6 +1777,8 @@ mod tests {
             draft: Ok(draft),
             section: Section::Appearance,
             preference_group: 0,
+            rule_group: 0,
+            confirm_rule_remove: false,
             selected: None,
             themes: vec!["Ferra".into()],
             installed_themes,
@@ -1744,5 +2001,84 @@ mod tests {
                 .background,
             iced::Color::BLACK
         );
+    }
+    #[test]
+    fn invalid_rule_opens_its_area_and_retains_error_until_corrected() {
+        use data::config::settings::rules::Area;
+        let mut settings = settings("");
+        let _ = settings.update(Message::Section(Section::Highlights), None);
+        let _ = settings.update(Message::RuleAdd(Area::Highlights, true), None);
+        let group = settings.rule_group;
+        let _ = settings.update(Message::RuleEdit(group, 3, "[".into()), None);
+        let _ = settings.update(Message::Section(Section::Networks), None);
+        let _ = settings.update(Message::Apply, None);
+        assert_eq!(settings.section, Section::Highlights);
+        assert_eq!(settings.rule_group, group);
+        assert_eq!(
+            settings.validation_error.as_ref().unwrap().target,
+            ValidationTarget::Rule { group, field: 3 }
+        );
+        let _ = settings.update(Message::Section(Section::Appearance), None);
+        assert!(settings.error.is_some());
+        let _ =
+            settings.update(Message::RuleEdit(group, 3, "valid".into()), None);
+        assert!(settings.validation_error.is_none());
+    }
+
+    #[test]
+    fn rule_removal_and_close_confirmations_cancel_without_discarding_draft() {
+        use data::config::settings::rules::Area;
+        let mut settings = settings("");
+        let _ = settings.update(Message::Section(Section::Notifications), None);
+        let _ =
+            settings.update(Message::RuleAdd(Area::Notifications, false), None);
+        let group = settings.rule_group;
+        let _ =
+            settings.update(Message::RuleEdit(group, 0, "#test".into()), None);
+        let _ = settings.update(Message::RuleRemove, None);
+        assert!(matches!(
+            settings.escape_message(),
+            Message::RuleCancelRemove
+        ));
+        let _ = settings.update(Message::Section(Section::Networks), None);
+        assert_eq!(settings.section, Section::Notifications);
+        let _ = settings.update(Message::Apply, None);
+        assert!(!settings.saving);
+        let _ = settings.update(Message::RuleCancelRemove, None);
+        assert!(!settings.draft.as_ref().unwrap().rules.groups[group].removed);
+        let _ = settings.update(Message::Close, None);
+        assert!(settings.confirm_close);
+        let _ = settings.update(Message::Apply, None);
+        assert!(settings.confirm_close);
+        assert!(!settings.saving);
+        let _ = settings.update(Message::KeepEditing, None);
+        assert!(settings.draft.as_ref().unwrap().is_dirty());
+        let _ = settings.update(Message::RuleRemove, None);
+        let _ = settings.update(Message::RuleConfirmRemove, None);
+        assert!(!settings.draft.as_ref().unwrap().is_dirty());
+    }
+    #[test]
+    fn applying_new_rules_keeps_the_selected_area_and_rule() {
+        use data::config::settings::rules::Area;
+        for area in [Area::Notifications, Area::Highlights] {
+            let mut settings = settings("");
+            let _ =
+                settings.update(Message::Section(rules::section(area)), None);
+            let _ = settings.update(Message::RuleAdd(area, false), None);
+            let g = settings.rule_group;
+            let (field, value) = if area == Area::Notifications {
+                (0, "#new")
+            } else {
+                (2, "boat")
+            };
+            let _ = settings
+                .update(Message::RuleEdit(g, field, value.into()), None);
+            let source = settings.draft.as_ref().unwrap().render().unwrap();
+            let _ = settings.update(Message::Saved(Ok(source)), None);
+            let draft = settings.draft.as_ref().unwrap();
+            assert_eq!(draft.rules.groups[settings.rule_group].area, area);
+            assert!(draft.rules.groups[settings.rule_group].removable);
+            assert!(!draft.is_dirty());
+        }
     }
 }

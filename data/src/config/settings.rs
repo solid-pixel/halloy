@@ -1,6 +1,7 @@
 //! Editable settings backed by the original document, rather than the runtime
 //! config (which contains defaults and resolved credentials).
 pub mod preferences;
+pub mod rules;
 
 use std::collections::HashSet;
 use std::io::Write;
@@ -175,6 +176,7 @@ pub struct Settings {
     pub networks: Vec<Network>,
     pub appearance: Appearance,
     pub preferences: preferences::Preferences,
+    pub rules: rules::Rules,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +184,7 @@ pub enum ValidationTarget {
     Network { index: usize, field: &'static str },
     Appearance(&'static str),
     Preference(usize),
+    Rule { group: usize, field: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,6 +275,7 @@ impl Settings {
             networks,
             appearance,
             preferences,
+            rules: rules::Rules::parse(&document),
         })
     }
 
@@ -279,6 +283,7 @@ impl Settings {
         self.networks != self.original_networks
             || self.appearance != self.original_appearance
             || self.preferences.is_dirty()
+            || self.rules.is_dirty()
     }
 
     pub fn font_changed(&self) -> bool {
@@ -427,6 +432,15 @@ impl Settings {
             return Err(ValidationError {
                 message,
                 target: ValidationTarget::Preference(index),
+            });
+        }
+        if let Ok(document) = self.source.parse::<DocumentMut>()
+            && let Some((group, field, message)) =
+                self.rules.validation_error(&document)
+        {
+            return Err(ValidationError {
+                message,
+                target: ValidationTarget::Rule { group, field },
             });
         }
         Ok(())
@@ -657,6 +671,9 @@ impl Settings {
             );
         }
         self.preferences.render_into(&mut document)?;
+        self.rules
+            .render_into(&mut document)
+            .map_err(|(_, _, message)| message)?;
         let contents = document.to_string();
         Config::validate(&contents).map_err(|error| error.to_string())?;
         Ok(contents)

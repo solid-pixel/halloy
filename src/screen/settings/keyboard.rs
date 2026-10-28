@@ -229,15 +229,21 @@ pub(super) struct Checkbox<'a, M> {
     inner: iced::widget::Checkbox<'a, M, Theme>,
     checked: bool,
     activation: Option<M>,
+    id: Option<widget::Id>,
 }
 pub(super) fn checkbox<'a, M: Clone + 'a>(checked: bool) -> Checkbox<'a, M> {
     Checkbox {
         inner: iced::widget::checkbox(checked),
         checked,
         activation: None,
+        id: None,
     }
 }
 impl<'a, M: Clone + 'a> Checkbox<'a, M> {
+    pub fn id(mut self, id: impl Into<widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
     pub fn label(
         mut self,
         label: impl iced::widget::text::IntoFragment<'a>,
@@ -264,7 +270,7 @@ impl<'a, M: Clone + 'a> Checkbox<'a, M> {
 }
 impl<'a, M: Clone + 'a> From<Checkbox<'a, M>> for Element<'a, M> {
     fn from(value: Checkbox<'a, M>) -> Self {
-        focusable(value.inner.into(), value.activation, None)
+        focusable(value.inner.into(), value.activation, value.id)
     }
 }
 
