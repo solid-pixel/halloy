@@ -8,6 +8,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::theme::{Styles, Theme};
+use crate::config::{Proxy, proxy};
 
 const GALLERY_DATA: &str = "https://themes.halloy.chat/__data.json";
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
@@ -54,8 +55,18 @@ impl Entry {
     }
 }
 
-pub async fn fetch() -> Result<Vec<Entry>, String> {
-    let client = reqwest::Client::builder()
+pub async fn fetch(proxy: Option<Proxy>) -> Result<Vec<Entry>, String> {
+    fetch_from(GALLERY_DATA, proxy.as_ref()).await
+}
+
+async fn fetch_from(
+    url: &str,
+    proxy: Option<&Proxy>,
+) -> Result<Vec<Entry>, String> {
+    let client = proxy::client_builder(proxy, None)
+        .map_err(|error| {
+            format!("Could not connect to the theme gallery: {error}")
+        })?
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(25))
         .user_agent(format!("Halloy/{}", crate::environment::VERSION.trim()))
@@ -63,7 +74,7 @@ pub async fn fetch() -> Result<Vec<Entry>, String> {
         .map_err(|error| {
             format!("Could not connect to the theme gallery: {error}")
         })?;
-    let mut response = client.get(GALLERY_DATA).send().await
+    let mut response = client.get(url).send().await
         .and_then(reqwest::Response::error_for_status)
         .map_err(|_| "Could not load the theme gallery. Check your connection and try again.")?;
     let mut bytes = Vec::new();
@@ -228,10 +239,208 @@ fn expand(
 
 #[cfg(test)]
 mod tests {
+    use std::future::Future;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
     use super::*;
 
     fn response() -> Value {
         serde_json::json!({"nodes":[{"data":[{"themes":1},[2],{"id":3,"name":4,"colors":5},42,"Test theme",{"general":6},{"background":7},"#ffffff"]}]})
+    }
+
+    fn runtime_test(test: impl Future<Output = ()>) {
+        irc::connection::prepare();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                tokio::time::timeout(Duration::from_secs(5), test)
+                    .await
+                    .expect("local gallery transport test timed out");
+            });
+    }
+
+    async fn respond(stream: &mut TcpStream, body: &str) -> String {
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            assert!(request.len() < 8192);
+            request.push(stream.read_u8().await.unwrap());
+        }
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        stream.shutdown().await.unwrap();
+        String::from_utf8(request).unwrap()
+    }
+
+    fn unused_origin() -> std::net::TcpListener {
+        let origin = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        origin.set_nonblocking(true).unwrap();
+        origin
+    }
+
+    fn assert_no_direct_connection(origin: &std::net::TcpListener) {
+        assert_eq!(
+            origin.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn gallery_fetches_without_an_application_proxy() {
+        runtime_test(async {
+            let origin = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url =
+                format!("http://{}/__data.json", origin.local_addr().unwrap());
+            let server = async {
+                let (mut stream, _) = origin.accept().await.unwrap();
+                respond(&mut stream, &response().to_string()).await
+            };
+            let (themes, request) =
+                futures::join!(fetch_from(&url, None), server);
+            assert_eq!(themes.unwrap()[0].name, "Test theme");
+            assert!(request.starts_with("GET /__data.json HTTP/1.1\r\n"));
+            assert!(request.to_lowercase().contains("user-agent: halloy/"));
+        });
+    }
+
+    #[test]
+    fn gallery_uses_authenticated_http_proxy_on_each_fetch() {
+        runtime_test(async {
+            let origin = unused_origin();
+            let url =
+                format!("http://{}/__data.json", origin.local_addr().unwrap());
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let proxy = Proxy::Http {
+                host: "127.0.0.1".into(),
+                port: listener.local_addr().unwrap().port(),
+                username: Some("review".into()),
+                password: Some("test".into()),
+                password_keyring: crate::config::keyring::Password::default(),
+            };
+            // A retry creates a fresh client, which must retain the same policy.
+            for _ in 0..2 {
+                let server = async {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    respond(&mut stream, &response().to_string()).await
+                };
+                let (themes, request) =
+                    futures::join!(fetch_from(&url, Some(&proxy)), server);
+                assert_eq!(themes.unwrap()[0].name, "Test theme");
+                assert!(
+                    request.starts_with(&format!("GET {url} HTTP/1.1\r\n"))
+                );
+                assert!(
+                    request.to_lowercase().contains(
+                        "proxy-authorization: basic cmv2awv3onrlc3q="
+                    )
+                );
+                assert_no_direct_connection(&origin);
+            }
+        });
+    }
+
+    #[test]
+    fn gallery_does_not_fall_back_to_direct_when_proxy_fails() {
+        runtime_test(async {
+            let origin = unused_origin();
+            let url =
+                format!("http://{}/__data.json", origin.local_addr().unwrap());
+            // A reserved but non-listening local port gives an immediate refusal.
+            let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = closed.local_addr().unwrap().port();
+            drop(closed);
+            let proxy = Proxy::Http {
+                host: "127.0.0.1".into(),
+                port,
+                username: None,
+                password: None,
+                password_keyring: crate::config::keyring::Password::default(),
+            };
+            assert!(fetch_from(&url, Some(&proxy)).await.is_err());
+            assert_no_direct_connection(&origin);
+        });
+    }
+
+    #[test]
+    fn gallery_uses_socks5_proxy() {
+        runtime_test(async {
+            let origin = unused_origin();
+            let target = origin.local_addr().unwrap();
+            let url = format!("http://{target}/__data.json");
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let proxy = Proxy::Socks5 {
+                host: "127.0.0.1".into(),
+                port: listener.local_addr().unwrap().port(),
+                username: None,
+                password: None,
+                password_keyring: crate::config::keyring::Password::default(),
+            };
+            let server = async {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                assert_eq!(stream.read_u8().await.unwrap(), 5);
+                let count = stream.read_u8().await.unwrap();
+                let mut methods = vec![0; usize::from(count)];
+                stream.read_exact(&mut methods).await.unwrap();
+                assert!(methods.contains(&0));
+                stream.write_all(&[5, 0]).await.unwrap();
+                let mut connect = [0; 10];
+                stream.read_exact(&mut connect).await.unwrap();
+                assert_eq!(&connect[..8], &[5, 1, 0, 1, 127, 0, 0, 1]);
+                assert_eq!(
+                    u16::from_be_bytes([connect[8], connect[9]]),
+                    target.port()
+                );
+                stream
+                    .write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0])
+                    .await
+                    .unwrap();
+                respond(&mut stream, &response().to_string()).await
+            };
+            let (themes, request) =
+                futures::join!(fetch_from(&url, Some(&proxy)), server);
+            assert_eq!(themes.unwrap()[0].name, "Test theme");
+            assert!(request.starts_with("GET /__data.json HTTP/1.1\r\n"));
+            assert_no_direct_connection(&origin);
+        });
+    }
+
+    #[cfg(feature = "tor")]
+    #[test]
+    fn gallery_refuses_tor_without_a_direct_connection() {
+        runtime_test(async {
+            let origin = unused_origin();
+            let url =
+                format!("http://{}/__data.json", origin.local_addr().unwrap());
+            let error = fetch_from(&url, Some(&Proxy::Tor)).await.unwrap_err();
+            assert!(error.contains("disabled when Tor proxy provided by Arti"));
+            assert_no_direct_connection(&origin);
+        });
+    }
+
+    #[test]
+    fn gallery_still_limits_the_response_size() {
+        runtime_test(async {
+            let origin = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url =
+                format!("http://{}/__data.json", origin.local_addr().unwrap());
+            let server = async {
+                let (mut stream, _) = origin.accept().await.unwrap();
+                respond(&mut stream, &" ".repeat(MAX_RESPONSE_BYTES + 1)).await
+            };
+            let (themes, _) = futures::join!(fetch_from(&url, None), server);
+            assert!(themes.unwrap_err().contains("response is too large"));
+        });
     }
 
     #[test]

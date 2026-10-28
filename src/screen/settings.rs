@@ -1,16 +1,19 @@
 use data::Config;
 use data::config::settings::{
-    Authentication, Network, Settings as Draft, ThemeMode,
+    Authentication, Network, Settings as Draft, ThemeMode, ValidationError,
+    ValidationTarget,
 };
 use iced::widget::{
-    button, checkbox, column, container, pick_list, responsive, row, rule,
-    scrollable, space, text, text_input,
+    column, container, responsive, row, rule, scrollable, space, text,
+    text_input,
 };
 use iced::{Alignment, Length, Size, Task, Vector};
 
 use crate::widget::{Element, key_press};
 use crate::{Theme, font, open_url, theme, window};
 
+mod keyboard;
+use keyboard::{button, checkbox, pick_list};
 mod preferences;
 mod style;
 mod theme_browser;
@@ -37,6 +40,12 @@ pub enum Field {
     FontSize,
     LineHeight,
     Scale,
+}
+
+impl Field {
+    fn id(self) -> String {
+        format!("settings-field-{self:?}")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +101,7 @@ pub struct Settings {
     saving: bool,
     pub status: Option<String>,
     error: Option<String>,
+    validation_error: Option<ValidationError>,
     confirm_close: bool,
     confirm_remove: bool,
     restart_needed: bool,
@@ -166,6 +176,7 @@ impl Settings {
                 saving: false,
                 status: None,
                 error: None,
+                validation_error: None,
                 confirm_close: false,
                 confirm_remove: false,
                 restart_needed: false,
@@ -184,6 +195,16 @@ impl Settings {
     }
 
     fn select_theme(&mut self, target: theme_browser::Target, name: String) {
+        let name = self
+            .installed_themes
+            .iter()
+            .find(|theme| theme.name == name)
+            .or_else(|| {
+                self.installed_themes
+                    .iter()
+                    .find(|theme| theme.name.eq_ignore_ascii_case(&name))
+            })
+            .map_or(name.clone(), |theme| theme.name.clone());
         if let Ok(draft) = &mut self.draft {
             match target {
                 theme_browser::Target::Single => {
@@ -201,7 +222,7 @@ impl Settings {
         self.preview = self
             .installed_themes
             .iter()
-            .find(|theme| theme.name.eq_ignore_ascii_case(&name))
+            .find(|theme| theme.name == name)
             .cloned()
             .map(Theme::from)
             .or_else(|| {
@@ -215,7 +236,6 @@ impl Settings {
                     })
             });
         self.status = None;
-        self.error = None;
     }
 
     fn refresh_themes(&mut self) {
@@ -246,6 +266,7 @@ impl Settings {
     pub fn update(
         &mut self,
         message: Message,
+        proxy: Option<&data::config::Proxy>,
     ) -> (Task<Message>, Option<Event>) {
         if self.saving
             && !matches!(
@@ -266,18 +287,33 @@ impl Settings {
                     .draft
                     .as_ref()
                     .map_or(ThemeMode::Single, |draft| draft.appearance.mode);
-                let (browser, task) =
-                    theme_browser::Browser::open(&self.installed_themes, mode);
+                let (browser, task) = theme_browser::Browser::open(
+                    &self.installed_themes,
+                    mode,
+                    proxy.cloned(),
+                );
                 self.browser = Some(browser);
-                return (task.map(Message::Browser), None);
+                return (
+                    Task::batch([
+                        task.map(Message::Browser),
+                        keyboard::focus("settings-gallery-search"),
+                    ]),
+                    None,
+                );
             }
             Message::Browser(message) => {
                 let Some(browser) = &mut self.browser else {
                     return (Task::none(), None);
                 };
-                let (task, event) = browser.update(message);
+                let (task, event) = browser.update(message, proxy.cloned());
+                let mut focus = Task::none();
                 match event {
-                    Some(theme_browser::Event::Back) => self.browser = None,
+                    Some(theme_browser::Event::Back) => {
+                        self.browser = None;
+                        focus = keyboard::focus(
+                            "settings-action-Browse and download themes",
+                        );
+                    }
                     Some(theme_browser::Event::Installed(theme)) => {
                         if !self.themes.contains(&theme.name) {
                             self.themes.push(theme.name.clone());
@@ -291,7 +327,11 @@ impl Settings {
                                 pending.file_stem().ok().as_ref() != Some(&name)
                             });
                             self.pending_themes.push(entry);
-                            if !self.themes.contains(&name) {
+                            if !self
+                                .themes
+                                .iter()
+                                .any(|theme| theme.eq_ignore_ascii_case(&name))
+                            {
                                 self.themes.push(name.clone());
                                 self.themes
                                     .sort_by_key(|name| name.to_lowercase());
@@ -305,18 +345,14 @@ impl Settings {
                     }
                     None => {}
                 }
-                return (task.map(Message::Browser), None);
+                return (
+                    Task::batch([task.map(Message::Browser), focus]),
+                    None,
+                );
             }
 
             Message::Focus(previous) => {
-                return (
-                    if previous {
-                        iced::widget::operation::focus_previous()
-                    } else {
-                        iced::widget::operation::focus_next()
-                    },
-                    None,
-                );
+                return (keyboard::step(previous), None);
             }
             Message::Saved(result) => {
                 self.refresh_themes();
@@ -335,6 +371,7 @@ impl Settings {
                             "Saved. Reconnect existing networks to use connection changes."
                         } else { "Settings applied." }.into());
                         self.error = None;
+                        self.validation_error = None;
                         return (Task::none(), Some(Event::Saved));
                     }
                     Err(error) => {
@@ -348,6 +385,7 @@ impl Settings {
                 if self.draft.as_ref().is_ok_and(Draft::is_dirty) {
                     self.confirm_close = true;
                     self.confirm_remove = false;
+                    return (keyboard::step(false), None);
                 } else {
                     return (
                         Task::none(),
@@ -389,6 +427,7 @@ impl Settings {
                     .filter(|draft| !draft.networks.is_empty())
                     .map(|_| 0);
                 self.error = None;
+                self.validation_error = None;
                 self.status = None;
                 self.confirm_close = false;
                 self.confirm_remove = false;
@@ -397,7 +436,6 @@ impl Settings {
                 let Ok(draft) = &mut self.draft else {
                     return (Task::none(), None);
                 };
-                self.error = None;
                 self.status = None;
                 match message {
                     Message::Section(section) => {
@@ -405,9 +443,19 @@ impl Settings {
                         self.preference_group = 0;
                         self.browser = None;
                         self.confirm_remove = false;
+                        return (
+                            keyboard::focus(format!(
+                                "settings-section-{section:?}"
+                            )),
+                            None,
+                        );
                     }
                     Message::PreferenceGroup(index) => {
                         self.preference_group = index;
+                        return (
+                            keyboard::focus(format!("settings-group-{index}")),
+                            None,
+                        );
                     }
                     Message::Preference(index, value) => {
                         if let Some(field) =
@@ -426,6 +474,12 @@ impl Settings {
                     Message::Select(index) => {
                         self.selected = Some(index);
                         self.confirm_remove = false;
+                        return (
+                            keyboard::focus(format!(
+                                "settings-network-{index}"
+                            )),
+                            None,
+                        );
                     }
                     Message::Add => {
                         let mut number = 1;
@@ -439,8 +493,12 @@ impl Settings {
                             .push(Network::new(format!("Network {number}")));
                         self.selected = Some(draft.networks.len() - 1);
                         self.confirm_remove = false;
+                        return (keyboard::focus(Field::Name.id()), None);
                     }
-                    Message::Remove => self.confirm_remove = true,
+                    Message::Remove => {
+                        self.confirm_remove = true;
+                        return (keyboard::step(false), None);
+                    }
                     Message::CancelRemove => self.confirm_remove = false,
                     Message::ConfirmRemove => {
                         if let Some(index) = self
@@ -539,6 +597,10 @@ impl Settings {
                         {
                             return (Task::none(), None);
                         }
+                        if let Some(error) = draft.validation_error() {
+                            let task = self.reveal_validation(error);
+                            return (task, None);
+                        }
                         if let Err(error) = draft.render() {
                             self.error = Some(error);
                         } else {
@@ -598,7 +660,67 @@ impl Settings {
                 }
             }
         }
+        if self.validation_error.is_some() {
+            self.validation_error =
+                self.draft.as_ref().ok().and_then(Draft::validation_error);
+            self.error = self
+                .validation_error
+                .as_ref()
+                .map(|error| error.message.clone());
+        }
         (Task::none(), None)
+    }
+
+    fn reveal_validation(&mut self, error: ValidationError) -> Task<Message> {
+        use data::config::settings::preferences::Area;
+        let id = match error.target {
+            ValidationTarget::Network { index, field } => {
+                self.section = Section::Networks;
+                self.selected = Some(index);
+                match field {
+                    "name" => Field::Name,
+                    "server" => Field::Server,
+                    "nickname" => Field::Nickname,
+                    "port" => Field::Port,
+                    "channels" => Field::Channels,
+                    "password" => Field::Password,
+                    _ => Field::Name,
+                }
+                .id()
+            }
+            ValidationTarget::Appearance(field) => {
+                self.section = Section::Appearance;
+                match field {
+                    "font_size" => Field::FontSize,
+                    "line_height" => Field::LineHeight,
+                    _ => Field::Scale,
+                }
+                .id()
+            }
+            ValidationTarget::Preference(index) => {
+                if let Ok(draft) = &self.draft
+                    && let Some(field) = draft.preferences.fields.get(index)
+                {
+                    self.section = match field.spec.area {
+                        Area::Navigation => Section::Navigation,
+                        Area::Chat => Section::Chat,
+                        Area::Sidebar => Section::Sidebar,
+                    };
+                    self.preference_group =
+                        preferences::groups(draft, field.spec.area)
+                            .iter()
+                            .position(|group| *group == field.spec.group)
+                            .unwrap_or(0);
+                }
+                format!("settings-preference-{index}")
+            }
+        };
+        self.browser = None;
+        self.confirm_close = false;
+        self.confirm_remove = false;
+        self.error = Some(error.message.clone());
+        self.validation_error = Some(error);
+        keyboard::focus(id)
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -627,6 +749,7 @@ impl Settings {
                     let content: Element<_> = match &self.browser {
                         Some(browser) => browser.view().map(Message::Browser),
                         None => scrollable(self.appearance(draft))
+                            .id("settings-form-scroll")
                             .style(style::scrollable)
                             .width(Length::Fill)
                             .height(Length::Fill)
@@ -709,12 +832,31 @@ impl Settings {
                 .align_y(Alignment::Center),
             );
         }
+        let confirming = self.confirm_close || self.confirm_remove;
+        let heading: Element<_> = if confirming {
+            keyboard::inactive(heading)
+        } else {
+            heading.into()
+        };
+        let navigation = if confirming {
+            keyboard::inactive(self.navigation())
+        } else {
+            self.navigation()
+        };
+        let body = if self.confirm_close {
+            keyboard::inactive(body)
+        } else {
+            body
+        };
+        let footer: Element<_> = if self.confirm_remove {
+            keyboard::inactive(footer)
+        } else {
+            footer.into()
+        };
         let content = container(
             column![
                 heading,
-                row![self.navigation(), body]
-                    .spacing(16)
-                    .height(Length::Fill),
+                row![navigation, body].spacing(16).height(Length::Fill),
                 rule::horizontal(1),
                 footer
             ]
@@ -728,19 +870,15 @@ impl Settings {
         })
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(theme::container::root);
-        let content = key_press(
-            content,
-            key_press::Key::Named(key_press::Named::Escape),
-            key_press::Modifiers::default(),
-            if self.browser.is_some() {
-                Message::Browser(theme_browser::Message::Back)
-            } else {
-                Message::Close
-            },
-        );
-        crate::widget::on_key(content, |key, modifiers| {
-            if key.as_ref() == key_press::Key::Named(key_press::Named::Tab) {
+        .style(theme::container::root)
+        .id(keyboard::ROOT);
+        let escape = self.escape_message();
+        keyboard::shortcuts(content, move |key, modifiers| {
+            if key.as_ref() == key_press::Key::Named(key_press::Named::Escape) {
+                Some(escape.clone())
+            } else if key.as_ref()
+                == key_press::Key::Named(key_press::Named::Tab)
+            {
                 Some(Message::Focus(modifiers.shift()))
             } else if modifiers.command()
                 && key.as_ref() == key_press::Key::Character("s")
@@ -750,6 +888,18 @@ impl Settings {
                 None
             }
         })
+    }
+
+    fn escape_message(&self) -> Message {
+        if self.confirm_close {
+            Message::KeepEditing
+        } else if self.confirm_remove {
+            Message::CancelRemove
+        } else if self.browser.is_some() {
+            Message::Browser(theme_browser::Message::Back)
+        } else {
+            Message::Close
+        }
     }
 
     fn navigation(&self) -> Element<'_, Message> {
@@ -801,6 +951,7 @@ impl Settings {
         }
         container(
             scrollable(navigation)
+                .id("settings-navigation-scroll")
                 .style(style::scrollable)
                 .height(Length::Fill),
         )
@@ -820,10 +971,20 @@ impl Settings {
                 Message::Select(index),
             ));
         }
+        let list = if self.confirm_remove {
+            keyboard::inactive(list)
+        } else {
+            list.into()
+        };
+        let add = if self.confirm_remove {
+            keyboard::inactive(action("Add network", Message::Add))
+        } else {
+            action("Add network", Message::Add)
+        };
         row![
             container(column![
-                scrollable(list).style(style::scrollable).height(Length::Fill),
-                action("Add network", Message::Add),
+                scrollable(list).id("settings-networks-scroll").style(style::scrollable).height(Length::Fill),
+                add,
             ].spacing(12))
                 .padding(8)
                 .width(144)
@@ -853,7 +1014,7 @@ impl Settings {
                 authentication.push(Authentication::Advanced);
             }
             let connection = vec![
-                field_with_layout(
+                self.field_with_layout(
                     "Network name",
                     "e.g. Libera",
                     &network.name,
@@ -861,7 +1022,7 @@ impl Settings {
                     false,
                     stacked,
                 ),
-                field_with_layout(
+                self.field_with_layout(
                     "Server",
                     "irc.libera.chat",
                     &network.server,
@@ -869,28 +1030,31 @@ impl Settings {
                     false,
                     stacked,
                 ),
-                labelled_with_layout(
-                    "Port",
-                    row![
-                        container(input_field(
-                            "Automatic",
-                            &network.port,
-                            Field::Port,
-                            false
-                        ))
-                        .width(104),
-                        checkbox(network.use_tls)
-                            .label("Use TLS")
-                            .on_toggle(Message::Tls)
-                            .style(style::checkbox),
-                    ]
-                    .spacing(12)
-                    .align_y(Alignment::Center)
-                    .into(),
-                    260.0,
-                    stacked,
+                self.mark_error(
+                    Field::Port,
+                    labelled_with_layout(
+                        "Port",
+                        row![
+                            container(input_field(
+                                "Automatic",
+                                &network.port,
+                                Field::Port,
+                                false
+                            ))
+                            .width(104),
+                            checkbox(network.use_tls)
+                                .label("Use TLS")
+                                .on_toggle(Message::Tls)
+                                .style(style::checkbox),
+                        ]
+                        .spacing(12)
+                        .align_y(Alignment::Center)
+                        .into(),
+                        260.0,
+                        stacked,
+                    ),
                 ),
-                field_with_layout(
+                self.field_with_layout(
                     "Nickname",
                     "Your nickname",
                     &network.nickname,
@@ -898,7 +1062,7 @@ impl Settings {
                     false,
                     stacked,
                 ),
-                field_with_layout(
+                self.field_with_layout(
                     "Join channels on connect",
                     "#halloy, #rust",
                     &network.channels,
@@ -930,7 +1094,7 @@ impl Settings {
             )];
             match network.authentication {
                 Authentication::Sasl => {
-                    authentication_rows.push(field_with_layout(
+                    authentication_rows.push(self.field_with_layout(
                         "Account name",
                         "Use nickname",
                         &network.username,
@@ -948,7 +1112,7 @@ impl Settings {
                 network.authentication,
                 Authentication::Sasl | Authentication::NickServ
             ) {
-                authentication_rows.push(column![field_with_layout("Password", "Account password", &network.password, Field::Password, true, stacked), text("Passwords entered here are stored in config.toml. Use the config file for keyring or password-command authentication.").size(12).style(theme::text::secondary)].spacing(4).into());
+                authentication_rows.push(column![self.field_with_layout("Password", "Account password", &network.password, Field::Password, true, stacked), text("Passwords entered here are stored in config.toml. Use the config file for keyring or password-command authentication.").size(12).style(theme::text::secondary)].spacing(4).into());
             }
             let mut form = column![
                 text(&network.name)
@@ -960,7 +1124,8 @@ impl Settings {
             .spacing(16);
             form = form.push(text("Existing connections use changed server and authentication settings after reconnecting.").style(theme::text::secondary));
             if self.confirm_remove {
-                form = form
+                let background: Element<_> = keyboard::inactive(form);
+                form = column![background]
                     .push(text(format!(
                         "Remove ‘{}’? Applying will disconnect it.",
                         network.name
@@ -976,6 +1141,7 @@ impl Settings {
                 form = form.push(action("Remove network…", Message::Remove));
             }
             scrollable(form.padding(iced::padding::right(12)))
+                .id("settings-form-scroll")
                 .style(style::scrollable)
                 .height(Length::Fill)
                 .into()
@@ -997,6 +1163,74 @@ impl Settings {
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+
+    fn field<'a>(
+        &'a self,
+        label: &'a str,
+        placeholder: &'a str,
+        value: &'a str,
+        field: Field,
+        secret: bool,
+    ) -> Element<'a, Message> {
+        self.field_with_layout(label, placeholder, value, field, secret, false)
+    }
+
+    fn field_with_layout<'a>(
+        &'a self,
+        label: &'a str,
+        placeholder: &'a str,
+        value: &'a str,
+        field: Field,
+        secret: bool,
+        stacked: bool,
+    ) -> Element<'a, Message> {
+        self.mark_error(
+            field,
+            field_with_layout(
+                label,
+                placeholder,
+                value,
+                field,
+                secret,
+                stacked,
+            ),
+        )
+    }
+
+    fn mark_error<'a>(
+        &'a self,
+        field: Field,
+        control: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let name = match field {
+            Field::Name => "name",
+            Field::Server => "server",
+            Field::Port => "port",
+            Field::Nickname => "nickname",
+            Field::Channels => "channels",
+            Field::Username => "username",
+            Field::Password => "password",
+            Field::FontFamily => "font_family",
+            Field::FontSize => "font_size",
+            Field::LineHeight => "line_height",
+            Field::Scale => "scale_factor",
+        };
+        let error = self.validation_error.as_ref().filter(|error| match error
+            .target
+        {
+            ValidationTarget::Network { index, field } => {
+                self.selected == Some(index) && field == name
+            }
+            ValidationTarget::Appearance(field) => field == name,
+            _ => false,
+        });
+        let mut content = column![control].spacing(4);
+        if let Some(error) = error {
+            content = content
+                .push(text(&error.message).size(12).style(theme::text::error));
+        }
+        content.into()
     }
 
     fn appearance<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
@@ -1074,11 +1308,11 @@ impl Settings {
             text("Appearance").size(16).font(font::PRIMARY_BOLD.clone()),
             settings_group("Theme", theme_rows),
             settings_group("Font", vec![
-                field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false),
-                column![labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0), text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
+                self.field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false),
+                column![self.mark_error(Field::LineHeight, self.mark_error(Field::FontSize, labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0))), text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
             ]),
             settings_group("Layout", vec![
-                column![field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false), text("Settings stays at its default scale so you can always adjust this value.").size(12).style(theme::text::secondary)].spacing(4).into(),
+                column![self.field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false), text("Settings stays at its default scale so you can always adjust this value.").size(12).style(theme::text::secondary)].spacing(4).into(),
             ]),
         ].spacing(16);
         container(form)
@@ -1133,6 +1367,7 @@ fn settings_rows<'a>(rows: Vec<Element<'a, Message>>) -> Element<'a, Message> {
 
 fn action<'a, M: Clone + 'a>(label: &'a str, message: M) -> Element<'a, M> {
     button(text(label))
+        .id(format!("settings-action-{label}"))
         .padding([6, 10])
         .style(style::button)
         .on_press(message)
@@ -1149,6 +1384,10 @@ fn section_tab<'a>(
     } else {
         font::PRIMARY.clone()
     }))
+    .id(match message {
+        Message::Section(section) => format!("settings-section-{section:?}"),
+        _ => unreachable!(),
+    })
     .padding([6, 8])
     .width(Length::Fill)
     .style(move |theme, status| style::section_tab(theme, status, selected))
@@ -1162,21 +1401,18 @@ fn tab<'a>(
     message: Message,
 ) -> Element<'a, Message> {
     button(text(label))
+        .id(match message {
+            Message::Select(index) => format!("settings-network-{index}"),
+            Message::PreferenceGroup(index) => {
+                format!("settings-group-{index}")
+            }
+            _ => unreachable!(),
+        })
         .padding([6, 10])
         .width(Length::Fill)
         .style(move |theme, status| style::tab(theme, status, selected))
         .on_press(message)
         .into()
-}
-
-fn field<'a>(
-    label: &'a str,
-    placeholder: &'a str,
-    value: &'a str,
-    field: Field,
-    secret: bool,
-) -> Element<'a, Message> {
-    field_with_layout(label, placeholder, value, field, secret, false)
 }
 
 fn field_with_layout<'a>(
@@ -1211,6 +1447,7 @@ fn input_field<'a>(
     secret: bool,
 ) -> Element<'a, Message> {
     text_input(placeholder, value)
+        .id(field.id())
         .style(input_style)
         .on_input(move |value| Message::Edit(field, value))
         .secure(secret)
@@ -1278,6 +1515,7 @@ mod tests {
         let (browser, _) = theme_browser::Browser::open(
             &installed_themes,
             draft.appearance.mode,
+            None,
         );
         Settings {
             window: window::Id::unique(),
@@ -1293,6 +1531,7 @@ mod tests {
             saving: false,
             status: None,
             error: None,
+            validation_error: None,
             confirm_close: false,
             confirm_remove: false,
             restart_needed: false,
@@ -1315,13 +1554,16 @@ mod tests {
         let mut settings = settings("theme = 'Ferra'\n");
         let current = Theme::default();
         let _ =
-            settings.update(Message::Browser(theme_browser::Message::Loaded(
-                Ok(vec![entry(1, "New theme", iced::Color::WHITE)]),
-            )));
+            settings.update(
+                Message::Browser(theme_browser::Message::Loaded(Ok(vec![
+                    entry(1, "New theme", iced::Color::WHITE),
+                ]))),
+                None,
+            );
         assert!(!settings.draft.as_ref().unwrap().is_dirty());
         assert!(std::ptr::eq(settings.preview_theme(&current), &current));
         let _ = settings
-            .update(Message::Browser(theme_browser::Message::Select(1)));
+            .update(Message::Browser(theme_browser::Message::Select(1)), None);
         let draft = settings.draft.as_ref().unwrap();
         assert!(draft.is_dirty());
         assert_eq!(draft.appearance.theme, "New theme");
@@ -1332,9 +1574,9 @@ mod tests {
         assert_eq!(settings.pending_themes.len(), 1);
         assert_eq!(settings.installed_themes.len(), 1);
         assert!(draft.render().unwrap().contains("New theme"));
-        let _ = settings.update(Message::Close);
+        let _ = settings.update(Message::Close, None);
         assert!(settings.confirm_close);
-        let (_, event) = settings.update(Message::Discard);
+        let (_, event) = settings.update(Message::Discard, None);
         assert!(matches!(event, Some(Event::Close)));
     }
 
@@ -1342,16 +1584,17 @@ mod tests {
     fn gallery_system_selections_keep_both_slots_and_preview_last_choice() {
         let mut settings =
             settings("theme = { light = 'Ferra', dark = 'Ferra' }\n");
-        let _ = settings.update(Message::Browser(
-            theme_browser::Message::Loaded(Ok(vec![
+        let _ = settings.update(
+            Message::Browser(theme_browser::Message::Loaded(Ok(vec![
                 entry(1, "New light", iced::Color::WHITE),
                 entry(2, "New dark", iced::Color::BLACK),
-            ])),
-        ));
+            ]))),
+            None,
+        );
         let _ = settings
-            .update(Message::Browser(theme_browser::Message::Select(1)));
+            .update(Message::Browser(theme_browser::Message::Select(1)), None);
         let _ = settings
-            .update(Message::Browser(theme_browser::Message::Select(2)));
+            .update(Message::Browser(theme_browser::Message::Select(2)), None);
         let draft = settings.draft.as_ref().unwrap();
         assert_eq!(draft.appearance.mode, ThemeMode::System);
         assert_eq!(draft.appearance.light, "New light");
@@ -1371,11 +1614,135 @@ mod tests {
     fn selecting_saved_theme_leaves_apply_disabled_and_saved_reload_ends_preview()
      {
         let mut settings = settings("theme = 'Ferra'\n");
-        let _ = settings.update(Message::Theme("Ferra".into()));
+        let _ = settings.update(Message::Theme("Ferra".into()), None);
         assert!(!settings.draft.as_ref().unwrap().is_dirty());
         assert!(settings.preview.is_some());
         settings.application_succeeded();
         let current = Theme::default();
         assert!(std::ptr::eq(settings.preview_theme(&current), &current));
+    }
+    #[test]
+    fn gallery_uses_installed_filename_casing_for_every_theme_slot() {
+        let mut settings = settings("theme = 'Ferra'\n");
+        settings.installed_themes.push(data::Theme::new(
+            "dracula".into(),
+            data::appearance::theme::Styles::default(),
+        ));
+        for target in [
+            theme_browser::Target::Single,
+            theme_browser::Target::Light,
+            theme_browser::Target::Dark,
+        ] {
+            settings.select_theme(target, "Dracula".into());
+        }
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(draft.appearance.theme, "dracula");
+        assert_eq!(draft.appearance.light, "dracula");
+        assert_eq!(draft.appearance.dark, "dracula");
+        assert!(draft.render().unwrap().contains("dracula"));
+        assert!(settings.preview.is_some());
+    }
+
+    #[test]
+    fn apply_reveals_invalid_appearance_and_navigation_retains_error_until_fixed()
+     {
+        let mut settings = settings("theme = 'Ferra'\n");
+        let _ =
+            settings.update(Message::Edit(Field::FontSize, "0".into()), None);
+        let _ = settings.update(Message::Section(Section::Navigation), None);
+        let _ = settings.update(Message::Apply, None);
+        assert_eq!(settings.section, Section::Appearance);
+        assert!(settings.browser.is_none());
+        assert_eq!(
+            settings.validation_error.as_ref().unwrap().target,
+            ValidationTarget::Appearance("font_size")
+        );
+        let error = settings.error.clone();
+        let _ = settings.update(Message::Section(Section::Sidebar), None);
+        assert_eq!(settings.error, error);
+        let _ =
+            settings.update(Message::Edit(Field::FontSize, "14".into()), None);
+        assert!(settings.error.is_none());
+        assert!(settings.validation_error.is_none());
+    }
+
+    #[test]
+    fn apply_selects_invalid_network_and_preference_group() {
+        let mut settings = settings(
+            "[servers.Review]\nserver = 'localhost'\nnickname = 'review'\nautoconnect = false\n",
+        );
+        settings.selected = Some(0);
+        let _ = settings.update(Message::Edit(Field::Port, "0".into()), None);
+        let _ = settings.update(Message::Apply, None);
+        assert_eq!(settings.section, Section::Networks);
+        assert_eq!(settings.selected, Some(0));
+        assert_eq!(
+            settings.validation_error.as_ref().unwrap().target,
+            ValidationTarget::Network {
+                index: 0,
+                field: "port"
+            }
+        );
+        let _ =
+            settings.update(Message::Edit(Field::Port, "6667".into()), None);
+        let index = settings
+            .draft
+            .as_ref()
+            .unwrap()
+            .preferences
+            .fields
+            .iter()
+            .position(|field| field.spec.path == "buffer.timestamp.format")
+            .unwrap();
+        let _ = settings.update(Message::Preference(index, "%Q".into()), None);
+        let _ = settings.update(Message::Apply, None);
+        assert_eq!(settings.section, Section::Chat);
+        assert_eq!(settings.preference_group, 0);
+        assert_eq!(
+            settings.validation_error.as_ref().unwrap().target,
+            ValidationTarget::Preference(index)
+        );
+    }
+    #[test]
+    fn escape_cancels_confirmation_before_leaving_gallery() {
+        let mut settings = settings("theme = 'Ferra'\n");
+        settings.confirm_close = true;
+        assert!(matches!(settings.escape_message(), Message::KeepEditing));
+        let message = settings.escape_message();
+        let _ = settings.update(message, None);
+        assert!(!settings.confirm_close);
+        assert!(settings.browser.is_some());
+        assert!(matches!(
+            settings.escape_message(),
+            Message::Browser(theme_browser::Message::Back)
+        ));
+    }
+
+    #[test]
+    fn distinct_case_sensitive_theme_names_preview_the_exact_saved_theme() {
+        let mut settings = settings("theme = 'Ferra'\n");
+        let mut light = data::appearance::theme::Styles::default();
+        light.general.background = iced::Color::WHITE;
+        let mut dark = light;
+        dark.general.background = iced::Color::BLACK;
+        settings.installed_themes = vec![
+            data::Theme::new("Dracula".into(), light),
+            data::Theme::new("dracula".into(), dark),
+        ];
+        settings.select_theme(theme_browser::Target::Single, "dracula".into());
+        assert_eq!(
+            settings.draft.as_ref().unwrap().appearance.theme,
+            "dracula"
+        );
+        assert_eq!(
+            settings
+                .preview
+                .as_ref()
+                .unwrap()
+                .styles()
+                .general
+                .background,
+            iced::Color::BLACK
+        );
     }
 }

@@ -296,6 +296,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_shortcut_has_no_default_dashboard_action() {
+        let key = KeyBind::from((
+            keyboard::Key::Character(",".into()),
+            keyboard::Modifiers::COMMAND,
+        ));
+        assert!(
+            Keyboard::default()
+                .shortcuts()
+                .iter()
+                .all(|shortcut| shortcut.execute(&key).is_none())
+        );
+
+        let binding = if cfg!(target_os = "macos") {
+            "command+,"
+        } else {
+            "ctrl+,"
+        };
+        let config: Keyboard =
+            toml::from_str(&format!("open_config_editor = {binding:?}"))
+                .unwrap();
+        assert_eq!(
+            config.shortcuts().iter().find_map(|s| s.execute(&key)),
+            Some(Command::OpenConfigEditor)
+        );
+        config.validate().unwrap();
+    }
+
+    #[test]
     fn focus_command_requires_configured_modifiers() {
         let config: Keyboard = toml::from_str(
             r#"

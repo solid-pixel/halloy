@@ -664,7 +664,8 @@ impl Halloy {
                 let Some(settings) = &mut self.settings_window else {
                     return Task::none();
                 };
-                let (task, event) = settings.update(message);
+                let (task, event) =
+                    settings.update(message, self.config.proxy.as_ref());
                 let task = task.map(Message::Settings);
                 match event {
                     Some(settings::Event::Quit) => {
@@ -1240,6 +1241,8 @@ impl Halloy {
                 }
             },
             Message::Event(window, event) => {
+                let event =
+                    event.resolve_settings_shortcut(&self.config.keyboard);
                 if event == Event::OpenSettings {
                     return self.open_settings();
                 }

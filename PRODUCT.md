@@ -26,11 +26,18 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
   Apply downloads missing themes and saves the selection. Revert or discarding
   restores the saved appearance. Downloads preserve existing files.
 - Settings opens from the user menu, command bar, welcome screen, or Cmd/Ctrl+,.
+- Keyboard focus reaches every Settings control, stays within the window, and
+  scrolls into view. Dropdowns support keyboard selection and cancellation;
+  confirmations keep focus on their choices. Validation opens the affected
+  section and keeps an explanation beside the field until corrected.
 - Apply validates and saves the existing `config.toml`, then reloads Halloy.
   Other options and comments are retained. A backup is written before replacing
   the file, external edits block saving, and symlinks update their target.
 - Advanced authentication and randomized theme lists remain in the file unless
   the user explicitly selects another configuration method.
+  Network renames preserve existing keyring credential references.
+- Theme gallery requests follow the current global proxy setting, including on
+  Retry. Unsupported Tor requests fail without a direct connection.
 - Font changes require a restart; existing server connection changes require
   reconnecting. New automatic connections begin after applying.
 - Unsaved drafts prompt before closing or quitting. Revert reloads from disk.

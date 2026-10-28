@@ -120,6 +120,15 @@ pub fn build_client(
     proxy: Option<&Proxy>,
     identity: Option<reqwest::Identity>,
 ) -> Result<reqwest::Client, BuildError> {
+    Ok(client_builder(proxy, identity)?.build()?)
+}
+
+/// Start an HTTP client with Halloy's proxy policy applied. Callers can add
+/// request-specific limits without accidentally bypassing the global proxy.
+pub fn client_builder(
+    proxy: Option<&Proxy>,
+    identity: Option<reqwest::Identity>,
+) -> Result<reqwest::ClientBuilder, BuildError> {
     let mut builder = match proxy {
         None => reqwest::Client::builder(),
         Some(Proxy::Http {
@@ -168,7 +177,7 @@ pub fn build_client(
         builder = builder.identity(identity);
     }
 
-    Ok(builder.build()?)
+    Ok(builder)
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1208,6 +1208,18 @@ impl Preferences {
                 let write_path = std::iter::once(spec.path)
                     .chain(spec.aliases.iter().copied())
                     .find(|path| lookup(&root, path).is_some())
+                    .or_else(|| {
+                        std::iter::once(spec.path)
+                            .chain(spec.aliases.iter().copied())
+                            .find(|path| {
+                                path.rsplit_once('.').is_some_and(
+                                    |(parent, _)| {
+                                        lookup(&root, parent)
+                                            .is_some_and(toml::Value::is_table)
+                                    },
+                                )
+                            })
+                    })
                     .unwrap_or(spec.path)
                     .to_owned();
                 let projected = legacy_indicator(&root, spec.path);
@@ -1259,6 +1271,30 @@ impl Preferences {
         self.fields
             .iter()
             .any(|field| field.value != field.original)
+    }
+    pub(super) fn validation_error(
+        &self,
+        source: &DocumentMut,
+    ) -> Option<(usize, String)> {
+        self.fields.iter().enumerate().find_map(|(index, field)| {
+            if field.value == field.original {
+                return None;
+            }
+            // Use the same writer and runtime validation as Apply. This also
+            // locates errors in formats or other values parsed by serde.
+            let mut document = source.clone();
+            let isolated = Self {
+                fields: vec![field.clone()],
+            };
+            isolated
+                .render_into(&mut document)
+                .and_then(|()| {
+                    super::Config::validate(&document.to_string())
+                        .map_err(|error| error.to_string())
+                })
+                .err()
+                .map(|message| (index, message))
+        })
     }
     pub fn reuse_current_pane(&mut self) {
         for field in &mut self.fields {
@@ -1490,6 +1526,52 @@ mod tests {
                 .unwrap()
                 .is_custom()
         );
+    }
+
+    #[test]
+    fn missing_siblings_use_the_existing_legacy_parent() {
+        for (source, path, value) in [
+            (
+                "[buffer.channel.topic]\nenabled = false\n",
+                "buffer.channel.topic_banner.max_lines",
+                "3",
+            ),
+            (
+                "[buffer.channel.topic]\nmax_lines = 3\n",
+                "buffer.channel.topic_banner.enabled",
+                "false",
+            ),
+            (
+                "buffer = { channel = { topic = { enabled = false } } }\n",
+                "buffer.channel.topic_banner.max_lines",
+                "3",
+            ),
+        ] {
+            let mut settings = Settings::parse(source.into()).unwrap();
+            edit(&mut settings, path, value);
+            let rendered = settings.render().unwrap();
+            Config::validate(&rendered).unwrap();
+            assert!(!rendered.contains("topic_banner"), "{rendered}");
+            let document = rendered.parse::<DocumentMut>().unwrap();
+            assert_eq!(
+                document["buffer"]["channel"]["topic"]["enabled"].as_bool(),
+                Some(false)
+            );
+            assert_eq!(
+                document["buffer"]["channel"]["topic"]["max_lines"]
+                    .as_integer(),
+                Some(3)
+            );
+        }
+    }
+
+    #[test]
+    fn preference_edits_preserve_leading_and_suffix_comments() {
+        let source = "[buffer.timestamp]\n# Timestamp explanation\n'format' = '%R' # timestamp suffix\n";
+        let mut settings = Settings::parse(source.into()).unwrap();
+        edit(&mut settings, "buffer.timestamp.format", "%H:%M:%S");
+        let rendered = settings.render().unwrap();
+        assert!(rendered.contains("# Timestamp explanation\n'format' = \"%H:%M:%S\" # timestamp suffix"));
     }
 
     #[test]

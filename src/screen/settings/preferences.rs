@@ -1,10 +1,9 @@
 use data::config::settings::Settings as Draft;
 use data::config::settings::preferences::{Area, Field, Kind};
-use iced::widget::{
-    checkbox, column, container, pick_list, row, scrollable, text, text_input,
-};
+use iced::widget::{column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Length};
 
+use super::keyboard::{checkbox, pick_list};
 use super::{
     Message, Settings, action, labelled, labelled_width, settings_rows, style,
 };
@@ -56,12 +55,14 @@ impl Settings {
         }
         for (index, field) in draft.preferences.fields.iter().enumerate() {
             if field.spec.area == area && field.spec.group == group {
-                rows.push(control(index, field));
+                let error = self.validation_error.as_ref().filter(|error| error.target == data::config::settings::ValidationTarget::Preference(index)).map(|error| error.message.as_str());
+                rows.push(control(index, field, error));
             }
         }
         form = form.push(settings_rows(rows));
         container(
             scrollable(form.padding(iced::padding::right(12)))
+                .id("settings-form-scroll")
                 .style(style::scrollable)
                 .height(Length::Fill),
         )
@@ -81,7 +82,11 @@ pub(super) fn groups(draft: &Draft, area: Area) -> Vec<&'static str> {
     groups
 }
 
-fn control(index: usize, field: &Field) -> Element<'_, Message> {
+fn control<'a>(
+    index: usize,
+    field: &'a Field,
+    error: Option<&'a str>,
+) -> Element<'a, Message> {
     let widget = match field.spec.kind {
         Kind::Boolean if !field.is_custom() => checkbox(field.value == "true")
             .label(field.spec.label)
@@ -160,6 +165,7 @@ fn control(index: usize, field: &Field) -> Element<'_, Message> {
             };
             let input: Element<'_, Message> =
                 text_input("Default", &field.value)
+                    .id(format!("settings-preference-{index}"))
                     .style(style::input)
                     .padding(6)
                     .on_input(move |value| Message::Preference(index, value))
@@ -182,6 +188,12 @@ fn control(index: usize, field: &Field) -> Element<'_, Message> {
             labelled_width(field.spec.label, input, width)
         }
     };
+    // Keep the input in the same tree position when validation clears while typing.
+    let mut content = column![widget].spacing(4);
+    if let Some(error) = error {
+        content = content.push(text(error).size(12).style(theme::text::error));
+    }
+    let widget: Element<'_, Message> = content.into();
     if field.spec.help.is_empty() || field.spec.help == "Pixels" {
         widget
     } else {

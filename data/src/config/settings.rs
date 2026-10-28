@@ -6,9 +6,9 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::path::Path;
 
-use toml_edit::{DocumentMut, Item, Table, TableLike, Value, value};
+use toml_edit::{DocumentMut, Item, Key, Table, TableLike, Value, value};
 
-use super::Config;
+use super::{Config, keyring};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Authentication {
@@ -177,6 +177,19 @@ pub struct Settings {
     pub preferences: preferences::Preferences,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationTarget {
+    Network { index: usize, field: &'static str },
+    Appearance(&'static str),
+    Preference(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationError {
+    pub message: String,
+    pub target: ValidationTarget,
+}
+
 impl Settings {
     pub fn load() -> Result<Self, String> {
         let source = std::fs::read_to_string(Config::path())
@@ -291,18 +304,32 @@ impl Settings {
         })
     }
 
-    pub fn render(&self) -> Result<String, String> {
+    pub fn validation_error(&self) -> Option<ValidationError> {
+        self.validate_fields().err()
+    }
+
+    fn validate_fields(&self) -> Result<(), ValidationError> {
         let mut names = HashSet::new();
-        for network in &self.networks {
+        for (index, network) in self.networks.iter().enumerate() {
+            let invalid = |field, message| ValidationError {
+                message,
+                target: ValidationTarget::Network { index, field },
+            };
             if network.name.trim().is_empty()
                 || network.name.contains(['\n', '\r', '\0'])
             {
-                return Err("Give every network a name.".into());
+                return Err(invalid(
+                    "name",
+                    "Give every network a name.".into(),
+                ));
             }
             if !names.insert(&network.name) {
-                return Err(format!(
-                    "The network name ‘{}’ is already in use.",
-                    network.name
+                return Err(invalid(
+                    "name",
+                    format!(
+                        "The network name ‘{}’ is already in use.",
+                        network.name
+                    ),
                 ));
             }
             // Existing unusual configuration can still be managed in the text editor.
@@ -313,18 +340,24 @@ impl Settings {
                 || network.server.chars().any(char::is_whitespace)
                 || network.server.contains("://")
             {
-                return Err(format!(
-                    "{}: enter a server hostname, such as irc.libera.chat.",
-                    network.name
+                return Err(invalid(
+                    "server",
+                    format!(
+                        "{}: enter a server hostname, such as irc.libera.chat.",
+                        network.name
+                    ),
                 ));
             }
             if network.nickname.is_empty()
                 || network.nickname.chars().any(char::is_whitespace)
                 || network.nickname.contains([',', ':', '\0'])
             {
-                return Err(format!(
-                    "{}: enter a nickname without spaces, commas or colons.",
-                    network.name
+                return Err(invalid(
+                    "nickname",
+                    format!(
+                        "{}: enter a nickname without spaces, commas or colons.",
+                        network.name
+                    ),
                 ));
             }
             if !network.port.is_empty()
@@ -334,18 +367,24 @@ impl Settings {
                     .ok()
                     .is_none_or(|port| port == 0)
             {
-                return Err(format!(
-                    "{}: the port must be between 1 and 65535, or empty for automatic.",
-                    network.name
+                return Err(invalid(
+                    "port",
+                    format!(
+                        "{}: the port must be between 1 and 65535, or empty for automatic.",
+                        network.name
+                    ),
                 ));
             }
             for channel in channels(&network.channels) {
                 if !channel.starts_with(['#', '&', '+', '!'])
                     || channel.contains(['\0', '\u{7}', ':'])
                 {
-                    return Err(format!(
-                        "{}: channels must start with #, &, + or !.",
-                        network.name
+                    return Err(invalid(
+                        "channels",
+                        format!(
+                            "{}: channels must start with #, &, + or !.",
+                            network.name
+                        ),
                     ));
                 }
             }
@@ -354,22 +393,54 @@ impl Settings {
                 Authentication::Sasl | Authentication::NickServ
             ) && network.password.is_empty()
             {
-                return Err(format!(
-                    "{}: enter an authentication password or choose None.",
-                    network.name
+                return Err(invalid(
+                    "password",
+                    format!(
+                        "{}: enter an authentication password or choose None.",
+                        network.name
+                    ),
                 ));
             }
         }
+        let a = &self.appearance;
+        let b = &self.original_appearance;
+        let invalid = |field, message| ValidationError {
+            message,
+            target: ValidationTarget::Appearance(field),
+        };
+        if a.font_size != b.font_size && !a.font_size.is_empty() {
+            font_size(&a.font_size)
+                .map_err(|message| invalid("font_size", message))?;
+        }
+        if a.line_height != b.line_height && !a.line_height.is_empty() {
+            positive_float(&a.line_height, "Line height")
+                .map_err(|message| invalid("line_height", message))?;
+        }
+        if a.scale_factor != b.scale_factor {
+            interface_scale(&a.scale_factor)
+                .map_err(|message| invalid("scale_factor", message))?;
+        }
+        if let Ok(document) = self.source.parse::<DocumentMut>()
+            && let Some((index, message)) =
+                self.preferences.validation_error(&document)
+        {
+            return Err(ValidationError {
+                message,
+                target: ValidationTarget::Preference(index),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn render(&self) -> Result<String, String> {
+        self.validate_fields().map_err(|error| error.message)?;
         let mut document = self
             .source
             .parse::<DocumentMut>()
             .map_err(|error| error.to_string())?;
         if self.networks_changed() {
             let original_document = document.clone();
-            let servers = table(&mut document, "servers")?;
-            for old in &self.original_networks {
-                servers.remove(&old.name);
-            }
+            table(&mut document, "servers")?.clear();
             for network in &self.networks {
                 let old = self.original_networks.iter().find(|old| {
                     Some(&old.name) == network.original_name.as_ref()
@@ -487,7 +558,43 @@ impl Settings {
                     }
                     Authentication::None | Authentication::Advanced => {}
                 }
-                servers.insert(&network.name, item);
+                if let Some(old) = old
+                    && old.name != network.name
+                {
+                    preserve_keyring_references(target, &old.name);
+                }
+                let previous_key =
+                    network.original_name.as_ref().and_then(|name| {
+                        original_document
+                            .get("servers")?
+                            .as_table_like()?
+                            .key(name)
+                    });
+                let key = if let Some(previous_key) = previous_key {
+                    if previous_key.get() == network.name {
+                        previous_key.clone()
+                    } else {
+                        Key::new(&network.name)
+                            .with_leaf_decor(previous_key.leaf_decor().clone())
+                            .with_dotted_decor(
+                                previous_key.dotted_decor().clone(),
+                            )
+                    }
+                } else {
+                    Key::new(&network.name)
+                };
+                // Keep source order and formatted keys for both table forms.
+                let servers = &mut document["servers"];
+                if let Some(servers) = servers.as_table_mut() {
+                    servers.insert_formatted(&key, item);
+                } else if let Some(servers) = servers.as_inline_table_mut() {
+                    servers.insert_formatted(
+                        &key,
+                        item.into_value().map_err(
+                            |_| "Network configuration must be a table.",
+                        )?,
+                    );
+                }
             }
         }
         let a = &self.appearance;
@@ -522,7 +629,7 @@ impl Settings {
             if a.font_size.is_empty() {
                 font.remove("size");
             } else {
-                let size = a.font_size.parse::<u8>().ok().filter(|size| *size > 0).ok_or("Font size must be between 1 and 255, or empty for the default.")?;
+                let size = font_size(&a.font_size)?;
                 set(font, "size", value(i64::from(size)));
             }
         }
@@ -539,10 +646,7 @@ impl Settings {
             }
         }
         if a.scale_factor != b.scale_factor {
-            let scale = positive_float(&a.scale_factor, "Interface scale")?;
-            if !(0.1..=3.0).contains(&scale) {
-                return Err("Interface scale must be between 0.1 and 3.".into());
-            }
+            let scale = interface_scale(&a.scale_factor)?;
             set(document.as_table_mut(), "scale_factor", value(scale));
         }
         if a.sidebar_position != b.sidebar_position {
@@ -613,6 +717,25 @@ fn positive_float(input: &str, label: &str) -> Result<f64, String> {
         .ok_or_else(|| format!("{label} must be a positive number."))
 }
 
+fn font_size(input: &str) -> Result<u8, String> {
+    input
+        .parse::<u8>()
+        .ok()
+        .filter(|size| *size > 0)
+        .ok_or_else(|| {
+            "Font size must be between 1 and 255, or empty for the default."
+                .into()
+        })
+}
+
+fn interface_scale(input: &str) -> Result<f64, String> {
+    let scale = positive_float(input, "Interface scale")?;
+    if !(0.1..=3.0).contains(&scale) {
+        return Err("Interface scale must be between 0.1 and 3.".into());
+    }
+    Ok(scale)
+}
+
 fn channels(input: &str) -> impl Iterator<Item = &str> {
     input
         .split(|ch: char| ch == ',' || ch.is_whitespace())
@@ -665,7 +788,76 @@ fn set(table: &mut dyn TableLike, key: &str, mut item: Item) {
     {
         *next.decor_mut() = previous.decor().clone();
     }
-    table.insert(key, item);
+    if let Some(previous) = table.get_mut(key) {
+        // Replacing the item preserves the key's quoting, whitespace, and
+        // leading comments. TableLike::insert resets that formatting.
+        *previous = item;
+    } else {
+        table.insert(key, item);
+    }
+}
+
+/// Default keyring IDs include the network name. Keep referring to the same
+/// entries after a rename without reading, copying, or exposing any secrets.
+fn preserve_keyring_references(network: &mut dyn TableLike, name: &str) {
+    fn preserve(table: &mut dyn TableLike, field: &str, key: String) {
+        if table.get(field).and_then(Item::as_bool) == Some(true) {
+            set(table, field, value(key));
+        }
+    }
+    fn nested<'a>(
+        mut table: &'a mut dyn TableLike,
+        path: &[&str],
+    ) -> Option<&'a mut dyn TableLike> {
+        for part in path {
+            table = table.get_mut(part)?.as_table_like_mut()?;
+        }
+        Some(table)
+    }
+
+    preserve(
+        network,
+        "password_keyring",
+        keyring::server_password_key(name),
+    );
+    preserve(
+        network,
+        "nick_password_keyring",
+        keyring::nick_password_key(name),
+    );
+    if let Some(channels) = nested(network, &["channel_keys_keyring"]) {
+        let names = channels
+            .iter()
+            .map(|(name, _)| name.to_owned())
+            .collect::<Vec<_>>();
+        for channel in names {
+            preserve(channels, &channel, keyring::channel_key(name, &channel));
+        }
+    }
+    if let Some(plain) = nested(network, &["sasl", "plain"]) {
+        preserve(
+            plain,
+            "password_keyring",
+            keyring::sasl_plain_password_key(name),
+        );
+    }
+    if let Some(plain) = nested(network, &["filehost", "credentials", "plain"])
+    {
+        preserve(
+            plain,
+            "password_keyring",
+            keyring::filehost_credentials_plain_password_key(name),
+        );
+    }
+    for kind in ["http", "socks5"] {
+        if let Some(proxy) = nested(network, &["proxy", kind]) {
+            preserve(
+                proxy,
+                "password_keyring",
+                keyring::server_proxy_password_key(name, kind),
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -690,6 +882,168 @@ mod tests {
         assert!(result.contains("theme = [\"ferra\", \"other\"] # randomized"));
         assert!(result.contains("password_command = \"get-secret\""));
         assert!(result.contains("[servers.libera.sasl.external]"));
+    }
+
+    #[test]
+    fn appearance_edits_preserve_leading_comments_and_quoted_keys() {
+        let source = "# My chosen palette\n\"theme\" = 'ferra' # theme suffix\n[font]\n# Text size explanation\n'size' = 13 # font suffix\n";
+        let mut settings = Settings::parse(source.into()).unwrap();
+        settings.appearance.theme = "Dracula".into();
+        settings.appearance.font_size = "15".into();
+        let rendered = settings.render().unwrap();
+        assert!(rendered.contains(
+            "# My chosen palette\n\"theme\" = \"Dracula\" # theme suffix"
+        ));
+        assert!(
+            rendered
+                .contains("# Text size explanation\n'size' = 15 # font suffix")
+        );
+    }
+
+    #[test]
+    fn network_edits_and_renames_preserve_entry_comments() {
+        let source = "[servers]\n# First network description\n'one' = { server = 'irc.one.test', nickname = 'test' } # one suffix\n# Unrelated network description\n\"two\" = { server = 'irc.two.test', nickname = 'test' } # two suffix\n";
+        let mut settings = Settings::parse(source.into()).unwrap();
+        settings.networks[0].autoconnect = false;
+        let rendered = settings.render().unwrap();
+        assert!(rendered.contains("# First network description\n'one' ="));
+        assert!(rendered.contains("# one suffix"));
+        assert!(rendered.contains("# Unrelated network description\n\"two\" = { server = 'irc.two.test', nickname = 'test' } # two suffix"));
+
+        settings.networks[0].name = "work.network".into();
+        let rendered = settings.render().unwrap();
+        assert!(
+            rendered.find("\"work.network\" =").unwrap()
+                < rendered.find("\"two\" =").unwrap()
+        );
+        assert!(
+            rendered
+                .contains("# First network description\n\"work.network\" =")
+        );
+        assert!(rendered.contains("# one suffix"));
+        assert!(rendered.contains("# Unrelated network description\n\"two\" = { server = 'irc.two.test', nickname = 'test' } # two suffix"));
+    }
+
+    #[tokio::test]
+    async fn network_rename_keeps_all_default_keyring_credentials_resolvable() {
+        // This process-local mock cannot read or change the user's keychain.
+        keyring_core::set_default_store(
+            keyring_core::mock::Store::new().unwrap(),
+        );
+        let source = r##"
+[servers."Old.Network"]
+server = "irc.example.test"
+nickname = "test"
+autoconnect = false
+password_keyring = true
+nick_password_keyring = true
+channel_keys_keyring = { "#private" = true, "#custom" = "custom.channel", "#disabled" = false }
+[servers."Old.Network".sasl.plain]
+password_keyring = true
+[servers."Old.Network".filehost.credentials.plain]
+password_keyring = true
+[servers."Old.Network".proxy.http]
+host = "127.0.0.1"
+port = 8080
+username = "test"
+password_keyring = true
+"##;
+        let keys = [
+            keyring::server_password_key("Old.Network"),
+            keyring::nick_password_key("Old.Network"),
+            keyring::channel_key("Old.Network", "#private"),
+            "custom.channel".into(),
+            keyring::sasl_plain_password_key("Old.Network"),
+            keyring::filehost_credentials_plain_password_key("Old.Network"),
+            keyring::server_proxy_password_key("Old.Network", "http"),
+        ];
+        for key in &keys {
+            keyring_core::Entry::new("chat.halloy", key)
+                .unwrap()
+                .set_password("in-memory-test-secret")
+                .unwrap();
+        }
+        let mut settings = Settings::parse(source.into()).unwrap();
+        settings.networks[0].name = "Renamed".into();
+        let rendered = settings.render().unwrap();
+        let document = rendered.parse::<DocumentMut>().unwrap();
+        let network = &document["servers"]["Renamed"];
+        assert_eq!(
+            network["password_keyring"].as_str(),
+            Some(keys[0].as_str())
+        );
+        assert_eq!(
+            network["nick_password_keyring"].as_str(),
+            Some(keys[1].as_str())
+        );
+        assert_eq!(
+            network["channel_keys_keyring"]["#private"].as_str(),
+            Some(keys[2].as_str())
+        );
+        assert_eq!(
+            network["channel_keys_keyring"]["#custom"].as_str(),
+            Some("custom.channel")
+        );
+        assert_eq!(
+            network["channel_keys_keyring"]["#disabled"].as_bool(),
+            Some(false)
+        );
+        assert_eq!(
+            network["sasl"]["plain"]["password_keyring"].as_str(),
+            Some(keys[4].as_str())
+        );
+        assert_eq!(
+            network["filehost"]["credentials"]["plain"]["password_keyring"]
+                .as_str(),
+            Some(keys[5].as_str())
+        );
+        assert_eq!(
+            network["proxy"]["http"]["password_keyring"].as_str(),
+            Some(keys[6].as_str())
+        );
+
+        let parsed: toml::Value = toml::from_str(&rendered).unwrap();
+        let config: crate::config::Server =
+            parsed["servers"]["Renamed"].clone().try_into().unwrap();
+        let resolved = crate::server::ConfigMap::new(
+            [("Renamed".into(), config)],
+            crate::config::sidebar::OrderChannelsBy::default(),
+            crate::config::buffer::typing::Typing::default(),
+        )
+        .await
+        .unwrap();
+        let server = resolved.servers().next().unwrap();
+        assert_eq!(server.password.as_deref(), Some("in-memory-test-secret"));
+        assert_eq!(
+            server.nick_password.as_deref(),
+            Some("in-memory-test-secret")
+        );
+        assert_eq!(server.channel_keys["#private"], "in-memory-test-secret");
+        // Saving another rename keeps the original explicit credential IDs.
+        let mut settings = Settings::parse(rendered).unwrap();
+        settings.networks[0].name = "Renamed again".into();
+        let rendered = settings.render().unwrap();
+        assert!(rendered.contains("servers.Old.Network.password"));
+        assert!(!rendered.contains("servers.Renamed.password"));
+    }
+
+    #[test]
+    fn inline_network_rename_preserves_socks_proxy_and_explicit_keyring_ids() {
+        let source = "servers = { old = { server = 'irc.example.test', nickname = 'test', password_keyring = false, nick_password_keyring = 'custom.nick', proxy = { socks5 = { host = '127.0.0.1', port = 1080, username = 'test', password_keyring = true } } } }\n";
+        let mut settings = Settings::parse(source.into()).unwrap();
+        settings.networks[0].name = "new".into();
+        let rendered = settings.render().unwrap();
+        let document = rendered.parse::<DocumentMut>().unwrap();
+        let network = &document["servers"]["new"];
+        assert_eq!(network["password_keyring"].as_bool(), Some(false));
+        assert_eq!(
+            network["nick_password_keyring"].as_str(),
+            Some("custom.nick")
+        );
+        assert_eq!(
+            network["proxy"]["socks5"]["password_keyring"].as_str(),
+            Some("servers.old.proxy.socks5.password")
+        );
     }
 
     #[test]
@@ -719,6 +1073,40 @@ mod tests {
         settings.networks[0].port.clear();
         settings.networks[0].authentication = Authentication::Sasl;
         assert!(settings.render().unwrap_err().contains("password"));
+    }
+
+    #[test]
+    fn validation_identifies_the_field_until_its_value_is_corrected() {
+        let mut settings = Settings::parse(SOURCE.into()).unwrap();
+        settings.networks[0].port = "65536".into();
+        let error = settings.validation_error().unwrap();
+        assert_eq!(
+            error.target,
+            ValidationTarget::Network {
+                index: 0,
+                field: "port"
+            }
+        );
+        assert_eq!(settings.render().unwrap_err(), error.message);
+        settings.networks[0].port.clear();
+        settings.appearance.font_size = "0".into();
+        let error = settings.validation_error().unwrap();
+        assert_eq!(error.target, ValidationTarget::Appearance("font_size"));
+        assert_eq!(settings.render().unwrap_err(), error.message);
+        settings.appearance.font_size = "15".into();
+        let index = settings
+            .preferences
+            .fields
+            .iter()
+            .position(|field| field.spec.path == "buffer.timestamp.format")
+            .unwrap();
+        settings.preferences.fields[index].value = "%Q".into();
+        let error = settings.validation_error().unwrap();
+        assert_eq!(error.target, ValidationTarget::Preference(index));
+        assert_eq!(settings.render().unwrap_err(), error.message);
+        settings.preferences.fields[index].value = "%H:%M".into();
+        assert!(settings.validation_error().is_none());
+        assert!(settings.render().is_ok());
     }
 
     #[test]

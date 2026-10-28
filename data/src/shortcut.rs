@@ -455,10 +455,8 @@ impl KeyBind {
     default!(quit_application, "q", CTRL);
     #[cfg(not(target_os = "linux"))]
     default!(quit_application);
-    #[cfg(target_os = "macos")]
-    default!(open_config_editor, ",", COMMAND);
-    #[cfg(not(target_os = "macos"))]
-    default!(open_config_editor, ",", CTRL);
+    // Cmd/Ctrl+, opens Settings. Explicit Config Editor bindings still work.
+    default!(open_config_editor);
     default!(open_config_file);
     default!(show_muted_buffers);
     default!(hide_muted_buffers);

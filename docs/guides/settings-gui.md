@@ -5,6 +5,8 @@ to a native Settings window. Open **Settings** from the sidebar user menu,
 choose **Configuration: Open Settings**
 in the command bar, or press **⌘,** on macOS / **Ctrl+,** on Windows and Linux.
 The welcome screen also has an **Open Settings** button.
+An explicit keyboard binding for the same shortcut takes priority. Config Editor
+remains available from the command bar and can have its own keyboard binding.
 
 Choose an area in the navigation pane on the left. **Networks** opens a second
 sidebar with the network list; select a network to open its form on the right.
@@ -22,6 +24,12 @@ a limit suited to their content.
 The footer keeps the draft status, **Revert changes**, **Apply**, and **Close**
 visible while forms scroll.
 
+Use **Tab / Shift+Tab** to move through Settings, and **Enter / Space** to
+activate buttons and checkboxes. Focus stays in Settings and scrolls into view.
+In a dropdown, use the arrow keys or Home/End, then Enter to select. Typing a
+letter jumps to a matching option. Escape cancels the open dropdown; Tab closes
+it and moves to the next control. An open confirmation keeps focus on its choices.
+
 ## Networks
 
 Use **Add network** at the bottom of the network sidebar to create a network.
@@ -36,6 +44,8 @@ password commands, server passwords, proxies, and other advanced options remain
 available in the configuration file. Existing advanced authentication is shown
 as **Configured in file**; selecting another method replaces that network's SASL
 and NickServ authentication settings.
+Renaming a network keeps its existing keyring credentials by retaining explicit
+references to their original entries.
 
 New networks with automatic connection enabled connect after applying.
 Reconnect existing networks to use changes to the server or authentication.
@@ -64,6 +74,8 @@ the configured system behavior.
 The gallery needs an internet connection. A failed request offers **Try again**
 and a link to the gallery website. Theme files installed manually are picked up
 when Settings is reopened.
+Gallery requests use the current global proxy setting. With Halloy's built-in
+Tor proxy, gallery requests are unavailable; they do not fall back to a direct connection.
 
 Font family, text size, and line height require an application restart after
 applying. Empty font fields use Halloy's defaults. Interface scale applies
@@ -109,6 +121,8 @@ written, including when the original file uses an older supported setting name.
 ## Saving
 
 Press **Apply** or **⌘S / Ctrl+S** to validate, save, and reload the configuration.
+If a field is invalid, Settings opens its section, focuses the field, and shows
+the correction beside it. The error stays visible until it is corrected.
 Settings edits the original TOML document, retaining other settings and comments.
 The previous file is backed up next to it as `config.toml.settings-backup`.
 Symlinked configurations update their actual target, with the backup beside it.

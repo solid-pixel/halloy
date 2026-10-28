@@ -3,11 +3,10 @@ use std::collections::HashSet;
 use data::Config;
 use data::appearance::catalog::{self, Entry};
 use data::config::settings::ThemeMode;
-use iced::widget::{
-    button, column, pick_list, row, rule, scrollable, space, text, text_input,
-};
+use iced::widget::{column, row, rule, scrollable, space, text, text_input};
 use iced::{Alignment, Length, Task};
 
+use super::keyboard::{button, pick_list};
 use super::{action, input_style, style};
 use crate::widget::Element;
 use crate::{font, open_url};
@@ -74,6 +73,7 @@ impl Browser {
     pub fn open(
         installed: &[data::Theme],
         mode: ThemeMode,
+        proxy: Option<data::config::Proxy>,
     ) -> (Self, Task<Message>) {
         (
             Self {
@@ -91,7 +91,7 @@ impl Browser {
                 error: None,
                 system_mode: mode == ThemeMode::System,
             },
-            Task::perform(catalog::fetch(), Message::Loaded),
+            Task::perform(catalog::fetch(proxy), Message::Loaded),
         )
     }
 
@@ -139,6 +139,7 @@ impl Browser {
     pub fn update(
         &mut self,
         message: Message,
+        proxy: Option<data::config::Proxy>,
     ) -> (Task<Message>, Option<Event>) {
         match message {
             Message::Loaded(result) => {
@@ -178,7 +179,7 @@ impl Browser {
             Message::Retry => {
                 self.loading = true;
                 return (
-                    Task::perform(catalog::fetch(), Message::Loaded),
+                    Task::perform(catalog::fetch(proxy), Message::Loaded),
                     None,
                 );
             }
@@ -257,6 +258,7 @@ impl Browser {
         .align_y(Alignment::Center);
         let controls = row![
             text_input("Search themes…", &self.query)
+                .id("settings-gallery-search")
                 .style(input_style)
                 .padding(6)
                 .on_input(Message::Search),
@@ -351,6 +353,7 @@ impl Browser {
                             ))
                             .style(secondary_text),
                             scrollable(list)
+                                .id("settings-gallery-scroll")
                                 .style(style::scrollable)
                                 .height(Length::Fill),
                         ]
