@@ -232,6 +232,21 @@ impl Keyboard {
         Ok(())
     }
 
+    /// The built-in Settings gesture yields to every explicitly configured
+    /// ordinary or message-focus binding. It is intercepted before widgets
+    /// receive text, rather than synthesized from an ignored key event later.
+    pub fn settings_shortcut_available(&self) -> bool {
+        let settings = KeyBind::open_settings();
+        !self
+            .keybind_pairs()
+            .iter()
+            .any(|(keys, _)| keys.iter().any(|key| key == &settings))
+            && !self
+                .focus_keybind_pairs()
+                .iter()
+                .any(|(keys, _)| keys.iter().any(|key| key == &settings))
+    }
+
     pub fn shortcuts(&self) -> Vec<Shortcut> {
         self.keybind_pairs()
             .into_iter()
@@ -297,6 +312,7 @@ mod tests {
 
     #[test]
     fn settings_shortcut_has_no_default_dashboard_action() {
+        assert!(Keyboard::default().settings_shortcut_available());
         let key = KeyBind::from((
             keyboard::Key::Character(",".into()),
             keyboard::Modifiers::COMMAND,
@@ -320,7 +336,35 @@ mod tests {
             config.shortcuts().iter().find_map(|s| s.execute(&key)),
             Some(Command::OpenConfigEditor)
         );
+        assert!(!config.settings_shortcut_available());
         config.validate().unwrap();
+    }
+
+    #[test]
+    fn settings_gesture_yields_to_every_explicit_focus_binding() {
+        let binding = if cfg!(target_os = "macos") {
+            "command+,"
+        } else {
+            "ctrl+,"
+        };
+        for action in [
+            "focus_up",
+            "focus_down",
+            "focus_left",
+            "focus_right",
+            "focus_activate",
+            "focus_activate_alt",
+            "focus_reply",
+            "focus_react",
+            "focus_redact",
+        ] {
+            let config: Keyboard =
+                toml::from_str(&format!("{action} = {binding:?}")).unwrap();
+            assert!(!config.settings_shortcut_available(), "{action}");
+        }
+        let config: Keyboard =
+            toml::from_str("focus_reply = 'ctrl+shift+,'").unwrap();
+        assert!(config.settings_shortcut_available());
     }
 
     #[test]

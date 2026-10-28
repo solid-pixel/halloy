@@ -457,6 +457,7 @@ impl KeyBind {
     default!(quit_application);
     // Cmd/Ctrl+, opens Settings. Explicit Config Editor bindings still work.
     default!(open_config_editor);
+    default!(open_settings, ",", COMMAND);
     default!(open_config_file);
     default!(show_muted_buffers);
     default!(hide_muted_buffers);

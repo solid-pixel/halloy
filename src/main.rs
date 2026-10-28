@@ -1241,8 +1241,6 @@ impl Halloy {
                 }
             },
             Message::Event(window, event) => {
-                let event =
-                    event.resolve_settings_shortcut(&self.config.keyboard);
                 if event == Event::OpenSettings {
                     return self.open_settings();
                 }
@@ -1839,6 +1837,26 @@ impl Halloy {
     }
 
     fn view(&self, id: window::Id) -> Element<'_, Message> {
+        let content = self.view_content(id);
+        let is_settings = self
+            .settings_window
+            .as_ref()
+            .is_some_and(|settings| settings.window == id);
+        if is_settings || self.config.keyboard.settings_shortcut_available() {
+            // Consume this before any editor/input can insert its text. The
+            // existing Settings window is simply focused when already open.
+            widget::key_press::key_press_with(
+                content,
+                iced::keyboard::Key::Character(",".into()),
+                iced::keyboard::Modifiers::COMMAND,
+                move || Message::Event(id, event::Event::OpenSettings),
+            )
+        } else {
+            content
+        }
+    }
+
+    fn view_content(&self, id: window::Id) -> Element<'_, Message> {
         let theme = self.preview_theme();
         let platform_specific_padding =
             platform_specific::content_padding(&self.config);

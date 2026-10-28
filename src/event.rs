@@ -13,26 +13,6 @@ pub enum Event {
     Key(KeyBind),
 }
 
-impl Event {
-    /// Focus actions are handled after widget dispatch, so they cannot mark
-    /// their key press captured. Honor those explicit bindings too.
-    pub fn resolve_settings_shortcut(
-        self,
-        keyboard: &data::config::keys::Keyboard,
-    ) -> Self {
-        if self == Self::OpenSettings {
-            let binding = KeyBind::from((
-                iced::keyboard::Key::Character(",".into()),
-                iced::keyboard::Modifiers::COMMAND,
-            ));
-            if keyboard.focus_command(&binding, false).is_some() {
-                return Self::Key(binding);
-            }
-        }
-        self
-    }
-}
-
 pub fn events() -> Subscription<(window::Id, Event)> {
     event::listen_with(filtered_events)
 }
@@ -45,16 +25,6 @@ fn filtered_events(
     let ignored = |status| matches!(status, iced::event::Status::Ignored);
 
     let recognized = match &event {
-        iced::Event::Keyboard(keyboard::Event::KeyPressed {
-            key: keyboard::Key::Character(key),
-            modifiers,
-            ..
-        }) if key.as_str() == ","
-            && *modifiers == keyboard::Modifiers::COMMAND
-            && ignored(status) =>
-        {
-            Some(Event::OpenSettings)
-        }
         iced::Event::Keyboard(keyboard::Event::KeyPressed {
             key: keyboard::Key::Named(keyboard::key::Named::Escape),
             ..
@@ -112,17 +82,20 @@ mod tests {
     }
 
     #[test]
-    fn settings_shortcut_only_handles_an_uncaptured_exact_binding() {
+    fn settings_gesture_is_not_synthesized_after_widget_dispatch() {
         let window = window::Id::unique();
         let command = keyboard::Modifiers::COMMAND;
-        assert_eq!(
-            filtered_events(comma(command), event::Status::Ignored, window),
-            Some((window, Event::OpenSettings))
-        );
-        // An explicit user binding has already run through the dashboard.
+        // The view interceptor owns the built-in gesture. A captured event
+        // must not enqueue a second Settings action.
         assert_eq!(
             filtered_events(comma(command), event::Status::Captured, window),
             None
+        );
+        // An explicit focus binding can still use the ordinary ignored-key
+        // route when the built-in interceptor has yielded to configuration.
+        assert_eq!(
+            filtered_events(comma(command), event::Status::Ignored, window),
+            Some((window, Event::Key(KeyBind::open_settings())))
         );
         assert!(!matches!(
             filtered_events(
@@ -132,23 +105,5 @@ mod tests {
             ),
             Some((_, Event::OpenSettings))
         ));
-    }
-
-    #[test]
-    fn settings_shortcut_defers_to_configured_focus_actions() {
-        let mut config = data::config::keys::Keyboard::default();
-        assert_eq!(
-            Event::OpenSettings.resolve_settings_shortcut(&config),
-            Event::OpenSettings
-        );
-        let binding = KeyBind::from((
-            keyboard::Key::Character(",".into()),
-            keyboard::Modifiers::COMMAND,
-        ));
-        config.focus_reply = binding.clone().into();
-        assert_eq!(
-            Event::OpenSettings.resolve_settings_shortcut(&config),
-            Event::Key(binding)
-        );
     }
 }
