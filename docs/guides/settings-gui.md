@@ -56,6 +56,9 @@ Removing a network takes effect when you apply and disconnects that network.
 
 Choose an installed theme, or separate themes for light and dark system
 appearance. Theme selections preview across all app windows before applying.
+The light and dark menus list only themes with matching background brightness,
+using the same classification as the gallery. The single-theme menu lists all
+themes. Existing selections are retained until you choose a replacement.
 Existing randomized theme lists are shown as **Configured in file** and kept
 until you choose another theme mode.
 

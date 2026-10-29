@@ -1471,6 +1471,41 @@ impl Settings {
         content.into()
     }
 
+    fn themes_for(&self, target: theme_browser::Target) -> Vec<String> {
+        use theme_browser::Target;
+        self.themes
+            .iter()
+            .filter(|name| {
+                if matches!(target, Target::Single) {
+                    return true;
+                }
+                let styles = self
+                    .installed_themes
+                    .iter()
+                    .find(|theme| theme.name == **name)
+                    .map(|theme| &theme.styles)
+                    .or_else(|| {
+                        self.pending_themes
+                            .iter()
+                            .find(|entry| {
+                                entry
+                                    .file_stem()
+                                    .is_ok_and(|stem| stem == **name)
+                            })
+                            .map(|entry| &entry.styles)
+                    });
+                styles.is_some_and(|styles| {
+                    // Match the gallery's palette-based classification,
+                    // including custom themes whose names give no hint.
+                    let light =
+                        styles.general.background.relative_luminance() > 0.5;
+                    light == matches!(target, Target::Light)
+                })
+            })
+            .cloned()
+            .collect()
+    }
+
     fn appearance<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
         let a = &draft.appearance;
         let mut modes = vec![ThemeMode::Single, ThemeMode::System];
@@ -1509,7 +1544,7 @@ impl Settings {
                     "Light appearance",
                     pick_list(
                         Some(a.light.clone()),
-                        self.themes.clone(),
+                        self.themes_for(theme_browser::Target::Light),
                         String::clone,
                     )
                     .on_select(Message::Light)
@@ -1523,7 +1558,7 @@ impl Settings {
                     "Dark appearance",
                     pick_list(
                         Some(a.dark.clone()),
-                        self.themes.clone(),
+                        self.themes_for(theme_browser::Target::Dark),
                         String::clone,
                     )
                     .on_select(Message::Dark)
@@ -1973,6 +2008,47 @@ mod tests {
             settings.escape_message(),
             Message::Browser(theme_browser::Message::Back)
         ));
+    }
+
+    #[test]
+    fn system_theme_menus_filter_palettes_without_changing_existing_choices() {
+        use theme_browser::Target;
+        let mut settings = settings(
+            "theme = { light = 'Dark named light', dark = 'Missing' }\n",
+        );
+        let mut light = data::appearance::theme::Styles::default();
+        light.general.background = iced::Color::WHITE;
+        let mut dark = light;
+        dark.general.background = iced::Color::BLACK;
+        settings.installed_themes = vec![
+            data::Theme::new("Dark named light".into(), dark),
+            data::Theme::new("Light named dark".into(), light),
+        ];
+        settings.pending_themes = vec![Entry {
+            id: 42,
+            name: "Pending light".into(),
+            styles: light,
+        }];
+        settings.themes = vec![
+            "Dark named light".into(),
+            "Light named dark".into(),
+            "Missing".into(),
+            "Pending light".into(),
+        ];
+        assert_eq!(
+            settings.themes_for(Target::Light),
+            vec!["Light named dark", "Pending light"]
+        );
+        assert_eq!(settings.themes_for(Target::Dark), vec!["Dark named light"]);
+        assert_eq!(settings.themes_for(Target::Single), settings.themes);
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(draft.appearance.light, "Dark named light");
+        assert_eq!(draft.appearance.dark, "Missing");
+        assert!(!draft.is_dirty());
+        settings.installed_themes.clear();
+        settings.pending_themes.clear();
+        assert!(settings.themes_for(Target::Light).is_empty());
+        assert!(settings.themes_for(Target::Dark).is_empty());
     }
 
     #[test]
