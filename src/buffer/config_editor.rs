@@ -5,12 +5,12 @@ use data::config::buffer::text_input::KeyBindings;
 use iced::widget::text::Wrapping;
 use iced::widget::text::highlighter::Style;
 use iced::widget::{
-    self, Space, column, container, operation, row, rule, text, text_editor,
+    self, Space, column, container, operation, row, rule, text_editor,
 };
 use iced::{Length, Task, highlighter, padding};
 
 use crate::appearance::theme;
-use crate::widget::{Element, text_editor_key_bindings, tooltip};
+use crate::widget::{Element, text, text_editor_key_bindings, tooltip};
 use crate::{Theme, font, icon};
 
 #[derive(Debug, Clone)]
@@ -364,6 +364,7 @@ pub fn view<'a>(
     .width(Length::Fill);
 
     let editor = text_editor(&state.content)
+        .line_height(font::current_line_height())
         .id(state.id.clone())
         .padding(8)
         .height(Length::Fill)

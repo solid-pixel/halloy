@@ -1,10 +1,10 @@
 use data::{Config, Preview, preview};
 use iced::Length::Fit;
-use iced::widget::{column, container, stack, text};
+use iced::widget::{column, container, stack};
 use iced::{ContentFit, Fill, Padding};
 
 use super::Element;
-use crate::widget::{animated_image, image};
+use crate::widget::{animated_image, image, text};
 use crate::{Theme, font, theme};
 
 pub fn preview_card_parts<'a, M: 'a>(

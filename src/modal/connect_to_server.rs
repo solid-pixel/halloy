@@ -1,10 +1,10 @@
 use data::config;
 use iced::widget::text::Wrapping;
-use iced::widget::{button, checkbox, column, container, text};
+use iced::widget::{button, checkbox, column, container};
 use iced::{Length, alignment};
 
 use super::Message;
-use crate::widget::{self, Element};
+use crate::widget::{self, Element, text};
 use crate::{Theme, font, theme};
 
 pub fn view<'a>(
@@ -24,6 +24,7 @@ pub fn view<'a>(
     ]
     .push(
         checkbox(config.dangerously_accept_invalid_certs)
+            .line_height(crate::font::current_line_height())
             .on_toggle(|toggle| {
                 Message::ServerConnect(
                     super::ServerConnect::DangerouslyAcceptInvalidCerts(toggle),

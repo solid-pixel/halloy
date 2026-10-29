@@ -23,7 +23,7 @@ use iced::Length::Fit;
 use iced::advanced::widget::Tree;
 use iced::advanced::{Layout, Shell, mouse};
 use iced::keyboard::{Key, key};
-use iced::widget::text::{self, Shaping, Wrapping};
+use iced::widget::text::{Shaping, Wrapping};
 use iced::widget::{
     self, Space, button, center, column, container, mouse_area, operation, row,
     rule, text_editor,
@@ -231,6 +231,7 @@ pub fn view<'a>(
     };
 
     let text_input = text_editor(&state.input_content)
+        .line_height(font::current_line_height())
         .id(state.input_id.clone())
         .placeholder("Send message...")
         .padding([2, 4])

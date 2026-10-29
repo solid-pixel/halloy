@@ -3,12 +3,12 @@ use std::collections::HashSet;
 use data::Config;
 use data::appearance::catalog::{self, Entry};
 use data::config::settings::ThemeMode;
-use iced::widget::{column, row, rule, scrollable, space, text, text_input};
+use iced::widget::{column, row, rule, scrollable, space};
 use iced::{Alignment, Length, Task};
 
 use super::keyboard::{button, pick_list};
 use super::{action, input_style, style};
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 use crate::{font, open_url};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

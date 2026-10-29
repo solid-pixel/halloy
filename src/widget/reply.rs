@@ -2,11 +2,11 @@ use data::config::buffer::AccessLevelFormat;
 use data::user::ChannelUsers;
 use data::{Config, message, metadata};
 use iced::alignment;
+use iced::widget::row;
 use iced::widget::text::Wrapping;
-use iced::widget::{row, text};
 
 use crate::widget::user_display::UserDisplay;
-use crate::widget::{Element, Marker, message_content, message_marker};
+use crate::widget::{Element, Marker, message_content, message_marker, text};
 use crate::{Theme, font, icon, theme};
 
 /// Generates an element like `↩ alice: hi bob`

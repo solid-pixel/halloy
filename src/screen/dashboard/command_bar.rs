@@ -1,9 +1,9 @@
 use data::{Config, buffer, client, server};
-use iced::widget::{column, combo_box, container, operation, text};
+use iced::widget::{column, combo_box, container, operation};
 use iced::{Length, Task, widget};
 
 use super::Focus;
-use crate::widget::{Element, double_pass, key_press};
+use crate::widget::{Element, double_pass, key_press, text};
 use crate::{theme, window};
 
 #[derive(Debug, Clone)]
@@ -91,6 +91,7 @@ impl CommandBar {
 
         let combo_box =
             combo_box(&self.state, "Type a command...", None, Message::Command)
+                .line_height(crate::font::current_line_height())
                 .id(self.id.clone())
                 .on_close(Message::Unfocused)
                 .on_option_hovered(Message::Hovered)

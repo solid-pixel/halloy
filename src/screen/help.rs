@@ -1,9 +1,9 @@
 use data::environment::WIKI_WEBSITE;
 use data::{Config, config};
-use iced::widget::{button, column, container, space, text};
+use iced::widget::{button, column, container, space};
 use iced::{Length, alignment};
 
-use crate::widget::{self, Element};
+use crate::widget::{self, Element, text};
 use crate::{Theme, font, icon, open_url, theme};
 
 #[derive(Debug, Clone)]

@@ -5,12 +5,12 @@ use data::config::settings::remaining_display::{
     DisplayEditors, OpacityKind, OpacityMode, RepeatMode, Target,
     ThemeListMode, ValidationError,
 };
-use iced::widget::{column, container, row, rule, text, text_input};
+use iced::widget::{column, container, row, rule};
 use iced::{Alignment, Length};
 
 use super::keyboard::{button, checkbox, pick_list};
 use super::style;
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 use crate::{font, theme};
 
 #[derive(Debug, Clone, Copy)]

@@ -1,9 +1,9 @@
 use data::Config;
-use iced::widget::{column, container, text};
+use iced::widget::{column, container};
 use iced::{Length, alignment};
 
 use crate::screen::dashboard::sidebar;
-use crate::widget::Element;
+use crate::widget::{Element, text};
 
 pub fn view<'a, Message: 'a>(
     config: &'a Config,

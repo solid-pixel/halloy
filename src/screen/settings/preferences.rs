@@ -1,13 +1,13 @@
 use data::config::settings::Settings as Draft;
 use data::config::settings::preferences::{Area, Field, Kind};
-use iced::widget::{column, container, row, scrollable, text, text_input};
+use iced::widget::{column, container, row, scrollable};
 use iced::{Alignment, Length};
 
 use super::keyboard::{checkbox, pick_list};
 use super::{
     Message, Settings, action, labelled, labelled_width, settings_rows, style,
 };
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 use crate::{font, theme};
 
 impl Settings {

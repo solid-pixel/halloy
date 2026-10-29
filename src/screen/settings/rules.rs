@@ -1,14 +1,14 @@
 use data::config::settings::rules::{Area, Kind};
 use data::config::settings::{Settings as Draft, ValidationTarget};
 use iced::Length;
-use iced::widget::{column, container, row, scrollable, text, text_input};
+use iced::widget::{column, container, row, scrollable};
 
 use super::keyboard::{checkbox, pick_list};
 use super::{
     Message, Section, Settings, action, keyboard, labelled_width,
     settings_rows, style,
 };
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 use crate::{font, theme};
 
 pub(super) fn area(section: Section) -> Option<Area> {

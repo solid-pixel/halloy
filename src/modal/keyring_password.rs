@@ -1,10 +1,10 @@
 use data::config;
 use iced::widget::text::Wrapping;
-use iced::widget::{button, column, container, text, text_input};
+use iced::widget::{button, column, container};
 use iced::{Length, Task, alignment};
 
 use super::{Event, Message};
-use crate::widget::{self, Element};
+use crate::widget::{self, Element, text, text_input};
 use crate::{Theme, font, theme};
 
 #[derive(Debug)]

@@ -162,7 +162,7 @@ where
                 let line_height = self
                     .format
                     .line_height
-                    .unwrap_or_else(|| renderer.line_height());
+                    .unwrap_or_else(crate::font::current_line_height);
 
                 state.paragraph.update(text::Text {
                     content: &self.fragment,
@@ -275,7 +275,7 @@ where
             let line_height_rel = self
                 .format
                 .line_height
-                .unwrap_or_else(|| renderer.line_height());
+                .unwrap_or_else(crate::font::current_line_height);
 
             let line_height = f32::from(line_height_rel.to_absolute(size));
 

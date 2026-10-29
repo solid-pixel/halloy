@@ -4,12 +4,12 @@ use data::config::settings::remaining_media::{
     Control, Error, Media, MediaArea,
 };
 use iced::Length;
-use iced::widget::{column, row, text, text_input};
+use iced::widget::{column, row};
 
 use super::keyboard::{checkbox, pick_list};
 use super::{Message, labelled_width, style};
 use crate::theme;
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 
 /// Merge these names with preference groups, retaining the order shown here.
 pub(super) fn groups(area: MediaArea) -> &'static [&'static str] {

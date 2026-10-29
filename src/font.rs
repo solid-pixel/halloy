@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::{LazyLock, RwLock};
 
 use data::appearance::theme::FontStyle;
 use data::config;
@@ -29,11 +29,27 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Font {
     bold: bool,
     italics: bool,
-    inner: OnceLock<iced::Font>,
+    inner: RwLock<Option<iced::Font>>,
+}
+
+impl Clone for Font {
+    fn clone(&self) -> Self {
+        Self {
+            bold: self.bold,
+            italics: self.italics,
+            inner: RwLock::new(*self.inner.read().expect("font lock")),
+        }
+    }
+}
+
+static LINE_HEIGHT: RwLock<LineHeight> = RwLock::new(LineHeight::Relative(1.3));
+
+pub fn current_line_height() -> LineHeight {
+    *LINE_HEIGHT.read().expect("line height lock")
 }
 
 impl Font {
@@ -41,7 +57,7 @@ impl Font {
         Self {
             bold,
             italics,
-            inner: OnceLock::new(),
+            inner: RwLock::new(None),
         }
     }
 
@@ -59,7 +75,7 @@ impl Font {
             font::Style::Normal
         };
 
-        let _ = self.inner.set(iced::Font {
+        *self.inner.write().expect("font lock") = Some(iced::Font {
             stretch,
             weight,
             style,
@@ -70,7 +86,11 @@ impl Font {
 
 impl From<Font> for iced::Font {
     fn from(value: Font) -> Self {
-        value.inner.get().copied().expect("font is set on startup")
+        value
+            .inner
+            .into_inner()
+            .expect("font lock")
+            .expect("font is set on startup")
     }
 }
 
@@ -106,6 +126,8 @@ fn default_font() -> iced::Font {
 }
 
 pub fn set(config: &config::Font) {
+    *LINE_HEIGHT.write().expect("line height lock") = line_height(config);
+    WIDTHS.with_borrow_mut(HashMap::clear);
     let font = config.family.as_ref().map_or_else(default_font, |family| {
         iced::Font::with_family(family.as_str())
     });
@@ -139,6 +161,16 @@ pub fn set(config: &config::Font) {
         config.weight,
         bold_weight,
     );
+}
+
+/// Refresh explicit faces, measured widths, and the defaults of every open
+/// window. The runtime also uses these defaults for subsequently opened windows.
+pub fn apply<Message>(config: &config::Font) -> iced::Task<Message> {
+    set(config);
+    iced::font::set_defaults(
+        PRIMARY.clone().into(),
+        config.size.map_or(crate::theme::TEXT_SIZE, f32::from),
+    )
 }
 
 pub fn load() -> Vec<Cow<'static, [u8]>> {
@@ -263,5 +295,66 @@ pub fn get_code(font_style: FontStyle) -> Font {
         FontStyle::Bold => CODE_BOLD.clone(),
         FontStyle::Italic => CODE_ITALICS.clone(),
         FontStyle::ItalicBold => CODE_BOLD_ITALICS.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn faces_can_be_changed_repeatedly_without_losing_style_or_old_snapshots() {
+        for (bold, italics) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let face = Font::new(bold, italics);
+            face.set(
+                iced::Font::MONOSPACE,
+                font::Stretch::Normal,
+                font::Weight::Normal,
+                font::Weight::Bold,
+            );
+            let before: iced::Font = face.clone().into();
+            face.set(
+                iced::Font::with_family("Georgia"),
+                font::Stretch::Condensed,
+                font::Weight::Light,
+                font::Weight::Semibold,
+            );
+            let after: iced::Font = face.clone().into();
+            assert_ne!(before.family, after.family);
+            assert_eq!(after.stretch, font::Stretch::Condensed);
+            assert_eq!(
+                after.weight,
+                if bold {
+                    font::Weight::Semibold
+                } else {
+                    font::Weight::Light
+                }
+            );
+            assert_eq!(
+                after.style,
+                if italics {
+                    font::Style::Italic
+                } else {
+                    font::Style::Normal
+                }
+            );
+            assert_eq!(
+                before.weight,
+                if bold {
+                    font::Weight::Bold
+                } else {
+                    font::Weight::Normal
+                }
+            );
+            face.set(
+                iced::Font::MONOSPACE,
+                font::Stretch::Normal,
+                font::Weight::Normal,
+                font::Weight::Bold,
+            );
+            assert_eq!(iced::Font::from(face), before);
+        }
     }
 }

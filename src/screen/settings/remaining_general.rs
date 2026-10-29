@@ -4,14 +4,12 @@ use data::config::settings::preferences::{Area, Kind};
 use data::config::settings::remaining_general::{
     Draft, Editor, Error, Field, Mode, Target, same_literal,
 };
-use iced::widget::{
-    column, container, row, rule, scrollable, text, text_input,
-};
+use iced::widget::{column, container, row, rule, scrollable};
 use iced::{Alignment, Length};
 
 use super::keyboard::{checkbox, pick_list};
 use super::{action, style};
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 use crate::{font, theme};
 
 #[derive(Debug, Clone)]

@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 use data::Config;
 use iced::Color;
-use iced::advanced::text;
 use iced::widget::text::LineHeight;
 
 pub use self::anchored_overlay::anchored_overlay;
@@ -68,10 +67,26 @@ pub enum Marker {
     None,
 }
 
-pub fn text<'a>(
+pub fn text<'a, T: iced::widget::text::Catalog + 'a>(
     content: impl iced::widget::text::IntoFragment<'a>,
-) -> Text<'a> {
-    iced::widget::text(content)
+) -> iced::widget::Text<'a, T> {
+    iced::widget::text(content).line_height(font::current_line_height())
+}
+
+pub mod text {
+    pub use iced::widget::text::*;
+}
+
+pub fn text_input<'a, M: Clone, T: iced::widget::text_input::Catalog + 'a>(
+    placeholder: impl iced::widget::text::IntoFragment<'a>,
+    value: impl iced::widget::text::IntoFragment<'a>,
+) -> iced::widget::TextInput<'a, M, T> {
+    iced::widget::text_input(placeholder, value)
+        .line_height(font::current_line_height())
+}
+
+pub mod text_input {
+    pub use iced::widget::text_input::*;
 }
 
 pub trait TextExt<'a>: Sized {

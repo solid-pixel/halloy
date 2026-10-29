@@ -55,8 +55,8 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
   Network renames preserve existing keyring credential references.
 - Theme gallery requests follow the current global proxy setting, including on
   Retry. Unsupported Tor requests fail without a direct connection.
-- Font changes require a restart; existing server connection changes require
-  reconnecting. New automatic connections begin after applying.
+- Font changes apply immediately across open and new windows; existing server
+  connection changes require reconnecting. New automatic connections begin after applying.
 - Unsaved drafts prompt before closing or quitting. Revert reloads from disk.
 - Settings retains its default scale so the chat scale control stays reachable.
 

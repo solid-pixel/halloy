@@ -93,8 +93,8 @@ Gallery requests use the current global proxy setting. With Halloy's built-in
 Tor proxy, gallery requests are unavailable; they do not fall back to a direct connection.
 
 Font family, code font, weights, stretch, emoji size, text size and line height
-require an application restart after
-applying. Empty font fields use Halloy's defaults. Interface scale applies
+apply immediately when you press **Apply**, across open windows and newly opened
+windows. Empty font fields use Halloy's defaults. Interface scale applies
 immediately. Chat interface scale affects the chat windows;
 Settings stays at its default scale so the scale control remains reachable.
 
@@ -200,7 +200,7 @@ General groups cover tooltips, update checks, initial window size and platform
 padding/decorations, rendering, logs, Config Editor indentation, context menus,
 metadata subscriptions and avatars, global display symbols/colors, CTCP replies,
 and Channel Monitor conditions. **Value source** distinguishes inherited defaults
-from explicit false, empty text and empty lists. Window, rendering, font and
+from explicit false, empty text and empty lists. Window, rendering and
 logging startup changes show restart advice.
 
 Commands groups cover command descriptions, aliases with placeholder arguments,

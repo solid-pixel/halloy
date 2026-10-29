@@ -76,7 +76,7 @@ pub fn font_schema(area: Area) -> Vec<Spec> {
             "Regular weight",
             Kind::Choice(WEIGHT),
             "\"normal\"",
-            "Requires restart.",
+            "Applies immediately.",
         ),
         spec(
             area,
@@ -85,7 +85,7 @@ pub fn font_schema(area: Area) -> Vec<Spec> {
             "Bold weight",
             Kind::Choice(BOLD),
             "",
-            "Requires restart.",
+            "Applies immediately.",
         ),
         spec(
             area,
@@ -96,7 +96,7 @@ pub fn font_schema(area: Area) -> Vec<Spec> {
                 choices!("Ultra condensed" => "\"ultra-condensed\"", "Extra condensed" => "\"extra-condensed\"", "Condensed" => "\"condensed\"", "Semi condensed" => "\"semi-condensed\"", "Normal" => "\"normal\"", "Semi expanded" => "\"semi-expanded\"", "Expanded" => "\"expanded\"", "Extra expanded" => "\"extra-expanded\"", "Ultra expanded" => "\"ultra-expanded\""),
             ),
             "\"normal\"",
-            "Requires restart.",
+            "Applies immediately.",
         ),
         spec(
             area,
@@ -105,7 +105,7 @@ pub fn font_schema(area: Area) -> Vec<Spec> {
             "Emoji-only message size",
             integer(true, 255),
             "",
-            "Leave empty for the font size. Requires restart.",
+            "Leave empty for the font size.",
         ),
     ];
     result[1].aliases = &["font.bold-weight"];
@@ -2271,7 +2271,7 @@ impl DisplayEditors {
                     "Font",
                     "font.code",
                     "Code font",
-                    "Leave empty to use the main font. Requires restart.",
+                    "Leave empty to use the main font.",
                 ),
                 OptionalText::parse(
                     document,

@@ -339,22 +339,13 @@ impl Settings {
 
     /// Startup-only options need a fresh application process after saving.
     pub fn restart_required(&self) -> bool {
-        self.display
-            .optional_text
-            .iter()
-            .any(|field| field.path.starts_with("font.") && field.is_dirty())
-            || self.general.fields.iter().any(|field| {
-                field.changed()
-                    && (field.path.starts_with("runtime.")
-                        || field.path.starts_with("window.")
-                        || field.path.starts_with("platform_specific.")
-                        || field.path.starts_with("logs."))
-            })
-            || self.font_changed()
-            || self.preferences.fields.iter().any(|field| {
-                field.value != field.original_value()
-                    && field.spec.path.starts_with("font.")
-            })
+        self.general.fields.iter().any(|field| {
+            field.changed()
+                && (field.path.starts_with("runtime.")
+                    || field.path.starts_with("window.")
+                    || field.path.starts_with("platform_specific.")
+                    || field.path.starts_with("logs."))
+        })
     }
 
     pub fn networks_changed(&self) -> bool {
@@ -1035,6 +1026,51 @@ fn preserve_keyring_references(network: &mut dyn TableLike, name: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_font_setting_is_live_but_startup_options_still_request_restart() {
+        let mut draft = super::Settings::parse(String::new()).unwrap();
+        draft.appearance.font_family = "Georgia".into();
+        draft.appearance.font_size = "18".into();
+        draft.appearance.line_height = "1.7".into();
+        for (path, value) in [
+            ("font.weight", "\"light\""),
+            ("font.bold_weight", "\"semibold\""),
+            ("font.stretch", "\"condensed\""),
+            ("font.only_emojis_size", "24"),
+        ] {
+            let field = draft
+                .preferences
+                .fields
+                .iter_mut()
+                .find(|field| field.spec.path == path)
+                .unwrap();
+            field.value = value.into();
+        }
+        draft
+            .display
+            .optional_text
+            .iter_mut()
+            .find(|field| field.path == "font.code")
+            .unwrap()
+            .value = "Menlo".into();
+        assert!(draft.is_dirty());
+        assert!(!draft.restart_required());
+        let output = draft.render().unwrap();
+        let parsed: toml::Value = toml::from_str(&output).unwrap();
+        assert_eq!(parsed["font"]["family"].as_str(), Some("Georgia"));
+        assert_eq!(parsed["font"]["code"].as_str(), Some("Menlo"));
+        assert_eq!(parsed["font"]["size"].as_integer(), Some(18));
+        assert_eq!(parsed["font"]["line_height"].as_float(), Some(1.7));
+        let index = draft
+            .general
+            .fields
+            .iter()
+            .position(|field| field.path == "window.initial_width")
+            .unwrap();
+        draft.general.edit(index, "1000".into());
+        assert!(draft.restart_required());
+    }
+
     use super::*;
 
     const SOURCE: &str = "# My settings\ntheme = [\"ferra\", \"other\"] # randomized\n[font]\nsize = 13 # keep this comment\n[servers.libera]\nserver = \"irc.libera.chat\"\nnickname = \"hello\"\nchannels = [{ name = \"#halloy\", mute = true }, \"#rust\"]\npassword_command = \"get-secret\"\n[servers.libera.sasl.external]\ncert = \"/tmp/cert.pem\"\n[servers.libera.filters]\nignore = []\n";

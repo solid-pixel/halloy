@@ -233,7 +233,8 @@ pub(super) struct Checkbox<'a, M> {
 }
 pub(super) fn checkbox<'a, M: Clone + 'a>(checked: bool) -> Checkbox<'a, M> {
     Checkbox {
-        inner: iced::widget::checkbox(checked),
+        inner: iced::widget::checkbox(checked)
+            .line_height(crate::font::current_line_height()),
         checked,
         activation: None,
         id: None,

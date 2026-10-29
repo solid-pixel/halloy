@@ -78,7 +78,7 @@ where
             width: Length::Shrink,
             padding: Padding::new(6.0),
             text_size: None,
-            line_height: None,
+            line_height: Some(crate::font::current_line_height()),
             shaping: text::Shaping::default(),
             ellipsis: text::Ellipsis::End,
             font: None,

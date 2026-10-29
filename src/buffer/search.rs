@@ -11,13 +11,12 @@ use data::user::Nick;
 use data::{Config, Server, buffer, message, preview};
 use iced::widget::{
     self, button, center, column, container, operation, row, rule, scrollable,
-    text, text_input,
 };
 use iced::{ContentFit, Length, Task, padding};
 use tokio::time;
 
 use super::{context_menu, message_feed, scroll_view};
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 use crate::{Theme, font, icon, theme};
 
 const DEBOUNCE: Duration = Duration::from_millis(200);

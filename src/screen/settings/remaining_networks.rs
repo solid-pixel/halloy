@@ -6,12 +6,12 @@ use data::config::settings::remaining_networks::{
     Draft, Field, Kind, METADATA_KEYS, Part, Path, Rows, ValidationError,
     path_id,
 };
-use iced::widget::{column, container, row, text, text_input};
+use iced::widget::{column, container, row};
 use iced::{Alignment, Length};
 
 use super::keyboard::{button, pick_list};
 use super::style;
-use crate::widget::Element;
+use crate::widget::{Element, text, text_input};
 use crate::{font, theme};
 
 #[derive(Clone)]

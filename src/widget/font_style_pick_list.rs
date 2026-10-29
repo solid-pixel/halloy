@@ -46,6 +46,7 @@ pub fn font_style_pick_list<'a, Message: 'a + Clone>(
         pick.to_string()
     })
     .on_select(on_selected)
+    .line_height(crate::font::current_line_height())
     .placeholder("Font style")
     .into()
 }

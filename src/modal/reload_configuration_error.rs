@@ -1,10 +1,10 @@
 use data::config;
 use iced::widget::text::Wrapping;
-use iced::widget::{button, column, container, text};
+use iced::widget::{button, column, container};
 use iced::{Length, alignment};
 
 use super::Message;
-use crate::widget::{self, Element};
+use crate::widget::{self, Element, text};
 use crate::{Theme, font, theme};
 
 pub fn view<'a>(

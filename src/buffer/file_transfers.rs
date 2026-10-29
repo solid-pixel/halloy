@@ -1,12 +1,10 @@
 use std::path::PathBuf;
 
 use data::{Config, file_transfer};
-use iced::widget::{
-    Scrollable, button, center, column, container, scrollable, text,
-};
+use iced::widget::{Scrollable, button, center, column, container, scrollable};
 use iced::{ContentFit, Length, Task};
 
-use crate::widget::{Element, Text};
+use crate::widget::{Element, Text, text};
 use crate::{Theme, font, icon, theme};
 
 #[derive(Debug, Clone)]

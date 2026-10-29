@@ -482,7 +482,7 @@ where
                         self.size.unwrap_or_else(|| renderer.text_size());
                     let line_height = self
                         .line_height
-                        .unwrap_or_else(|| renderer.line_height());
+                        .unwrap_or_else(crate::font::current_line_height);
 
                     let text_with_spans = |spans| Text {
                         content: spans,
@@ -666,7 +666,7 @@ where
                     let line_height = span
                         .line_height
                         .or(self.line_height)
-                        .unwrap_or_else(|| renderer.line_height())
+                        .unwrap_or_else(crate::font::current_line_height)
                         .to_absolute(size);
 
                     let color = span
@@ -724,8 +724,9 @@ where
             .and_then(|raw| raw.resolve(bounds))
         {
             let size = self.size.unwrap_or_else(|| renderer.text_size());
-            let line_height_rel =
-                self.line_height.unwrap_or_else(|| renderer.line_height());
+            let line_height_rel = self
+                .line_height
+                .unwrap_or_else(crate::font::current_line_height);
 
             let line_height = f32::from(line_height_rel.to_absolute(size));
 
@@ -891,7 +892,8 @@ where
 
         let font = font.unwrap_or_else(|| renderer.font());
         let size = size.unwrap_or_else(|| renderer.text_size());
-        let line_height = line_height.unwrap_or_else(|| renderer.line_height());
+        let line_height =
+            line_height.unwrap_or_else(crate::font::current_line_height);
 
         let text_with_spans = |spans| Text {
             content: spans,

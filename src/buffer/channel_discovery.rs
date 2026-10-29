@@ -5,14 +5,15 @@ use data::{
 };
 use iced::widget::{
     self, button, center, column, container, operation, pick_list, row, rule,
-    scrollable, span, text, text_input,
+    scrollable, span,
 };
 use iced::{Color, ContentFit, Length, Task, alignment, padding};
 
 use crate::appearance::theme;
 use crate::buffer::context_menu::{self, Context, UrlContext, UserContext};
 use crate::widget::{
-    Element, message_content, selectable_rich_text, selectable_text,
+    Element, message_content, selectable_rich_text, selectable_text, text,
+    text_input,
 };
 use crate::{Theme, font, icon};
 

@@ -4,13 +4,13 @@ use data::history::{self, model};
 use data::user::{ChannelUsers, User};
 use data::{Config, file_transfer, preview};
 use iced::widget::text::Wrapping;
-use iced::widget::{button, center, container, pane_grid, row, sensor, text};
+use iced::widget::{button, center, container, pane_grid, row, sensor};
 use iced::{Length, Padding, Size, Task, padding};
 
 use super::sidebar;
 use crate::buffer::context_menu::ChannelsContext;
 use crate::buffer::{self, Buffer};
-use crate::widget::{Element, tooltip};
+use crate::widget::{Element, text, tooltip};
 use crate::{Theme, font, icon, theme, widget};
 
 #[derive(Debug, Clone)]

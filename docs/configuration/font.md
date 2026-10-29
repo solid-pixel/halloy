@@ -2,8 +2,9 @@
 
 Application wide font settings.
 
-::: warning
-Changes to font settings require an application restart to take effect.
+::: tip
+Font changes take effect immediately when you Apply Settings or reload the
+configuration file. Open windows and new windows use the updated fonts.
 :::
 
 ::: info
@@ -68,7 +69,7 @@ size = 13
 
 ## `line_height`
 
-Line height (relative to the font size). Changing this also requires a restart to take effect.
+Line height (relative to the font size). Changes take effect immediately.
 
 ```toml
 # Type: number

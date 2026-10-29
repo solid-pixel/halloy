@@ -15,7 +15,7 @@ use iced::Length::Fit;
 use iced::widget::text::LineHeight;
 use iced::widget::{
     Space, button, center, column, container, mouse_area, right, row, rule,
-    space, stack, text,
+    space, stack,
 };
 use iced::{Color, ContentFit, Length, alignment, padding};
 
@@ -31,7 +31,7 @@ use crate::widget::reaction_row::{has_visible_reactions, reaction_row};
 use crate::widget::user_display::UserDisplay;
 use crate::widget::{
     Element, Marker, message_content, message_marker, notify_visibility,
-    preview_content, reply_preview_content, selectable_text, tooltip,
+    preview_content, reply_preview_content, selectable_text, text, tooltip,
 };
 use crate::{Theme, font, icon, theme};
 

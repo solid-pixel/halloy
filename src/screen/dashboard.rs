@@ -25,7 +25,7 @@ use data::{
 };
 use hashbrown::{HashMap, HashSet, hash_map};
 use iced::widget::pane_grid::{self, PaneGrid};
-use iced::widget::{center, column, container, row, stack, text};
+use iced::widget::{center, column, container, row, stack};
 use iced::{Length, Size, Task, Vector, clipboard, padding};
 
 use self::command_bar::CommandBar;
@@ -37,7 +37,7 @@ use crate::buffer::context_menu::ChannelsContext;
 use crate::buffer::{self, Buffer, FocusDirection};
 use crate::notification::{self, Notifications, toast};
 use crate::widget::{
-    Column, Element, Row, context_menu, selectable_text, shortcut,
+    Column, Element, Row, context_menu, selectable_text, shortcut, text,
 };
 use crate::window::Window;
 use crate::{

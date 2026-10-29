@@ -4,12 +4,11 @@ use data::config::settings::{
     ValidationTarget,
 };
 use iced::widget::{
-    column, container, responsive, row, rule, scrollable, space, text,
-    text_input,
+    column, container, responsive, row, rule, scrollable, space,
 };
 use iced::{Alignment, Length, Size, Task, Vector};
 
-use crate::widget::{Element, key_press};
+use crate::widget::{Element, key_press, text, text_input};
 use crate::{Theme, font, open_url, theme, window};
 
 mod keyboard;
@@ -1891,7 +1890,7 @@ impl Settings {
         );
         let mut font_rows = vec![
             self.field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false),
-            column![self.mark_error(Field::LineHeight, self.mark_error(Field::FontSize, labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0))), text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
+            column![self.mark_error(Field::LineHeight, self.mark_error(Field::FontSize, labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0))), text("Font changes apply immediately. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
         ];
         for (index, field) in draft
             .preferences

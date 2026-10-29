@@ -1,9 +1,9 @@
 use data::{Config, message};
-use iced::widget::{button, column, container, operation, text_input};
+use iced::widget::{button, column, container, operation};
 use iced::{Length, Task, alignment};
 
 use crate::theme;
-use crate::widget::{self, Element, text};
+use crate::widget::{self, Element, text, text_input};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {

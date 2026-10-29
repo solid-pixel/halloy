@@ -748,6 +748,13 @@ impl Halloy {
                 Task::none()
             }
             Message::ScreenConfigReloaded(updated) => {
+                let font_task = updated
+                    .as_ref()
+                    .ok()
+                    .filter(|config| config.font != self.config.font)
+                    .map_or_else(Task::none, |config| {
+                        font::apply(&config.font)
+                    });
                 let saved_window = self.main_window;
                 let current_runtime = self.config.runtime;
                 let runtime =
@@ -762,7 +769,7 @@ impl Halloy {
                 halloy.settings_window = self.settings_window.take();
                 *self = halloy;
 
-                let mut tasks = vec![command];
+                let mut tasks = vec![command, font_task];
 
                 // Only reload the runtime when needed.
                 // TODO: Can crash with NVIDIA Vulkan
@@ -2052,6 +2059,11 @@ impl Halloy {
 
         match config {
             Ok(updated) => {
+                let font_task = if self.config.font != updated.font {
+                    font::apply(&updated.font)
+                } else {
+                    Task::none()
+                };
                 logger::update_max_level(
                     updated.logs.pane_level.clone().into(),
                 );
@@ -2172,7 +2184,7 @@ impl Halloy {
                 if let Screen::Dashboard(dashboard) = &mut self.screen {
                     dashboard.refresh_cache_limits(&self.config);
 
-                    let mut tasks = Vec::new();
+                    let mut tasks = vec![font_task];
 
                     if let Some(runtime_task) = runtime_task {
                         tasks.push(runtime_task);
@@ -2199,6 +2211,7 @@ impl Halloy {
 
                 return runtime_task
                     .unwrap_or_else(Task::none)
+                    .chain(font_task)
                     .chain(reload_complete);
             }
             Err(error) => {

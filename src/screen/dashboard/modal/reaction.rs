@@ -3,11 +3,11 @@ use std::borrow::Cow;
 use data::{Config, message};
 use hashbrown::HashSet;
 use iced::widget::{
-    Scrollable, button, column, container, operation, scrollable, text_input,
+    Scrollable, button, column, container, operation, scrollable,
 };
 use iced::{Length, Task};
 
-use crate::widget::{Element, Row, key_press, text};
+use crate::widget::{Element, Row, key_press, text, text_input};
 use crate::{emoji, theme, widget};
 
 const MODAL_HEIGHT: f32 = 250.0;

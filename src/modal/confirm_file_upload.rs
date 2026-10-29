@@ -1,8 +1,8 @@
 use data::config;
-use iced::widget::{button, column, row, span, text};
+use iced::widget::{button, column, row, span};
 
 use super::Message;
-use crate::widget::{self, Element, selectable_rich_text};
+use crate::widget::{self, Element, selectable_rich_text, text};
 use crate::{Theme, theme};
 
 pub fn view<'a>(

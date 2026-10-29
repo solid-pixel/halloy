@@ -242,7 +242,7 @@ impl Default for Scrollbar {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Font {
     pub family: Option<String>,

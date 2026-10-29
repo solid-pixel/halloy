@@ -7,15 +7,15 @@ use futures::TryFutureExt;
 use iced::Length::*;
 use iced::alignment::Vertical;
 use iced::widget::text::LineHeight;
-use iced::widget::{
-    button, center, column, combo_box, container, row, text_input,
-};
+use iced::widget::{button, center, column, combo_box, container, row};
 use iced::{Color, Length, Padding, Task, Vector, alignment, clipboard};
 use strum::IntoEnumIterator;
 use tokio::time;
 
 use crate::theme::{self, Styles, Theme};
-use crate::widget::{Element, color_picker, font_style_pick_list, tooltip};
+use crate::widget::{
+    Element, color_picker, font_style_pick_list, text_input, tooltip,
+};
 use crate::window::{self, Window};
 use crate::{icon, open_url, platform_specific, widget};
 

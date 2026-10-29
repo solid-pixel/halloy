@@ -21,7 +21,7 @@ use data::{Config, Image, Preview, client, metadata, reaction};
 use hashbrown::{HashMap, HashSet};
 use iced::widget::{
     self, Scrollable, button, column, container, row, rule, scrollable, sensor,
-    space, text,
+    space,
 };
 use iced::{Length, Size, Task, padding};
 use tokio::time;
@@ -33,7 +33,7 @@ use super::message_focus::{
 };
 use super::{context_menu, input_view};
 use crate::widget::user_display::UserDisplay;
-use crate::widget::{Element, notify_visibility};
+use crate::widget::{Element, notify_visibility, text};
 use crate::{Theme, buffer, font, theme};
 
 const SCROLL_TO_TIMEOUT: Duration = Duration::from_millis(300);

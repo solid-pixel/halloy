@@ -2,10 +2,11 @@
 use iced::widget::overlay::menu;
 use iced::widget::{
     button as button_widget, checkbox as checkbox_widget,
-    pick_list as pick_list_widget, scrollable as scrollable_widget, text_input,
+    pick_list as pick_list_widget, scrollable as scrollable_widget,
 };
 use iced::{Border, Color, Shadow};
 
+use crate::widget::text_input;
 use crate::{Theme, theme};
 
 fn opaque(color: Color, background: Color) -> Color {
