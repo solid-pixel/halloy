@@ -867,13 +867,6 @@ pub(super) fn theme_lists<'a>(
     group(rows)
 }
 
-/// Append to Appearance's Font group alongside the scalar font specs.
-pub(super) fn appearance_font<'a>(
-    editor: &'a DisplayEditors,
-    validation: Option<&ValidationError>,
-) -> Element<'a, Event> {
-    optional_text(editor, None, "Font", validation)
-}
 fn optional_text<'a>(
     editor: &'a DisplayEditors,
     area: Option<Area>,

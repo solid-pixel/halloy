@@ -2046,7 +2046,10 @@ impl Halloy {
         let (settings, task) =
             settings::Settings::open(&self.main_window, &self.config);
         self.settings_window = Some(settings);
-        task.discard()
+        Task::batch([
+            task.discard(),
+            settings::font_picker::load().map(Message::Settings),
+        ])
     }
 
     fn config_file_reloaded(

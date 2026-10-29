@@ -92,6 +92,12 @@ when Settings is reopened.
 Gallery requests use the current global proxy setting. With Halloy's built-in
 Tor proxy, gallery requests are unavailable; they do not fall back to a direct connection.
 
+Font family and code font have searchable menus of installed font families.
+Type to filter, then select a result with the mouse or arrow keys and Enter.
+Searching does not change your draft. **Default** restores the main font default
+or makes the code font inherit the main font. Reopen Settings to refresh the list
+after installing fonts. If fonts cannot be listed, you can enter a name manually.
+
 Font family, code font, weights, stretch, emoji size, text size and line height
 apply immediately when you press **Apply**, across open windows and newly opened
 windows. Empty font fields use Halloy's defaults. Interface scale applies

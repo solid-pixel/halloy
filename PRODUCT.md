@@ -23,8 +23,8 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
 - Commands: aliases, execution limits, sysinfo and default part/quit messages.
 - Previews: URL modes/patterns, card/image controls and conditions, requests/cache.
 - Transfers/uploads: DCC and acceptance, optional atomic server settings, upload controls.
-- Appearance: installed themes, light/dark theme selection, font family, text
-  size, line height, and chat interface scale.
+- Appearance: installed themes, light/dark theme selection, searchable installed
+  font pickers for main and code text, text size, line height, and chat interface scale.
 - Navigation: chat-opening and click actions, a current-pane preset, split axis,
   pane gaps and restoration, title bar buttons, and chat scrollbars.
 - Chat display: messages and timestamps, names and user lists, activity messages,

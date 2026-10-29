@@ -11,6 +11,7 @@ use iced::{Alignment, Length, Size, Task, Vector};
 use crate::widget::{Element, key_press, text, text_input};
 use crate::{Theme, font, open_url, theme, window};
 
+pub mod font_picker;
 mod keyboard;
 use keyboard::{button, checkbox, pick_list};
 mod preferences;
@@ -62,6 +63,13 @@ impl Field {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    FontsLoaded(Result<Vec<iced::font::Family>, String>),
+    FontsRetry,
+    FontOpened(font_picker::Target),
+    FontClosed(font_picker::Target),
+    FontDismiss(font_picker::Target, Option<bool>),
+    FontChosen(font_picker::Target, String),
+    FontEdited(font_picker::Target, String),
     Section(Section),
     Select(usize),
     Add,
@@ -113,6 +121,7 @@ pub enum Event {
 }
 
 pub struct Settings {
+    fonts: font_picker::State,
     pub window: window::Id,
     draft: Result<Draft, String>,
     section: Section,
@@ -202,6 +211,7 @@ impl Settings {
         themes.dedup();
         (
             Self {
+                fonts: font_picker::State::default(),
                 window,
                 draft,
                 section: Section::Networks,
@@ -319,6 +329,10 @@ impl Settings {
         message: Message,
         proxy: Option<&data::config::Proxy>,
     ) -> (Task<Message>, Option<Event>) {
+        if let Message::FontsLoaded(result) = message {
+            self.fonts.loaded(result);
+            return (Task::none(), None);
+        }
         if self.saving
             && !matches!(
                 message,
@@ -389,8 +403,70 @@ impl Settings {
         {
             return (Task::none(), None);
         }
+        let font_selected = matches!(&message, Message::FontChosen(..));
         match message {
+            Message::FontsRetry => return (font_picker::load(), None),
+            Message::FontOpened(target) => self.fonts.active = Some(target),
+            Message::FontClosed(target) => {
+                if self.fonts.active == Some(target) {
+                    self.fonts.active = None;
+                }
+            }
+            Message::FontDismiss(target, previous) => {
+                self.fonts.dismiss();
+                return (
+                    previous.map_or_else(
+                        || keyboard::focus(target.default_id()),
+                        keyboard::step,
+                    ),
+                    None,
+                );
+            }
+            Message::FontChosen(target, value)
+            | Message::FontEdited(target, value) => {
+                self.fonts.active = None;
+                let message = match target {
+                    font_picker::Target::Main => {
+                        Some(Message::Edit(Field::FontFamily, value))
+                    }
+                    font_picker::Target::Code => self
+                        .draft
+                        .as_ref()
+                        .ok()
+                        .and_then(|draft| {
+                            draft
+                                .display
+                                .optional_text
+                                .iter()
+                                .position(|field| field.path == "font.code")
+                        })
+                        .map(|index| {
+                            Message::Display(
+                                remaining_display::Event::OptionalText(
+                                    index, value,
+                                ),
+                            )
+                        }),
+                };
+                let (task, event) = message.map_or_else(
+                    || (Task::none(), None),
+                    |message| self.update(message, proxy),
+                );
+                return (
+                    if font_selected {
+                        Task::batch([
+                            task,
+                            keyboard::focus(target.default_id()),
+                        ])
+                    } else {
+                        task
+                    },
+                    event,
+                );
+            }
+            Message::FontsLoaded(_) => unreachable!(),
             Message::BrowseThemes => {
+                self.fonts.active = None;
                 self.refresh_themes();
                 let mode = self
                     .draft
@@ -563,6 +639,7 @@ impl Settings {
                 let _ = open_url::open(Config::path());
             }
             Message::Revert => {
+                self.fonts.active = None;
                 self.browser = None;
                 self.preview = None;
                 self.pending_themes.clear();
@@ -610,6 +687,7 @@ impl Settings {
                 self.status = None;
                 match message {
                     Message::Section(section) => {
+                        self.fonts.active = None;
                         self.section = section;
                         self.preference_group = 0;
                         self.confirm_rule_remove = false;
@@ -1444,6 +1522,8 @@ impl Settings {
             Message::RuleCancelRemove
         } else if self.confirm_remove {
             Message::CancelRemove
+        } else if let Some(target) = self.fonts.active {
+            Message::FontDismiss(target, None)
         } else if self.browser.is_some() {
             Message::Browser(theme_browser::Message::Back)
         } else {
@@ -1889,7 +1969,7 @@ impl Settings {
             .map(Message::Display),
         );
         let mut font_rows = vec![
-            self.field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false),
+            self.fonts.view(font_picker::Target::Main, "Font family", &a.font_family, Field::FontFamily.id()),
             column![self.mark_error(Field::LineHeight, self.mark_error(Field::FontSize, labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0))), text("Font changes apply immediately. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
         ];
         for (index, field) in draft
@@ -1911,13 +1991,15 @@ impl Settings {
                 .map(|error| error.message.as_str());
             font_rows.push(preferences::control(index, field, error));
         }
-        font_rows.push(
-            remaining_display::appearance_font(
-                &draft.display,
-                display_error.as_ref(),
-            )
-            .map(Message::Display),
-        );
+        if let Some((index, field)) = draft
+            .display
+            .optional_text
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.path == "font.code")
+        {
+            font_rows.push(self.fonts.view(font_picker::Target::Code, "Code font", &field.value, data::config::settings::remaining_display::Target::OptionalText(index).input_id()));
+        }
         let form = column![
             text("Appearance").size(16).font(font::PRIMARY_BOLD.clone()),
             settings_group("Theme", theme_rows),
@@ -2203,6 +2285,7 @@ mod tests {
             None,
         );
         Settings {
+            fonts: font_picker::State::default(),
             window: window::Id::unique(),
             draft: Ok(draft.clone()),
             section: Section::Appearance,
@@ -2230,6 +2313,111 @@ mod tests {
             restart_needed: false,
             quit_requested: false,
         }
+    }
+
+    #[test]
+    fn font_discovery_preserves_existing_names_and_saved_draft() {
+        let mut settings =
+            settings("[font]\nfamily = 'Custom font'\ncode = 'Custom code'\n");
+        let before = settings.draft.as_ref().unwrap().render().unwrap();
+        let _ = settings.update(
+            Message::FontsLoaded(Ok(vec![iced::font::Family::Name("Menlo")])),
+            None,
+        );
+        assert_eq!(settings.draft.as_ref().unwrap().render().unwrap(), before);
+        assert!(!settings.draft.as_ref().unwrap().is_dirty());
+    }
+
+    #[test]
+    fn font_choices_and_defaults_edit_only_the_target_field() {
+        let mut settings =
+            settings("[font]\nfamily = 'Menlo'\ncode = 'Arial'\n");
+        let _ = settings.update(
+            Message::FontChosen(font_picker::Target::Main, "Georgia".into()),
+            None,
+        );
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(draft.appearance.font_family, "Georgia");
+        assert_eq!(
+            draft
+                .display
+                .optional_text
+                .iter()
+                .find(|f| f.path == "font.code")
+                .unwrap()
+                .value,
+            "Arial"
+        );
+        let _ = settings.update(
+            Message::FontEdited(font_picker::Target::Code, "Helvetica".into()),
+            None,
+        );
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(draft.appearance.font_family, "Georgia");
+        assert_eq!(
+            draft
+                .display
+                .optional_text
+                .iter()
+                .find(|f| f.path == "font.code")
+                .unwrap()
+                .value,
+            "Helvetica"
+        );
+        for target in [font_picker::Target::Main, font_picker::Target::Code] {
+            let _ = settings
+                .update(Message::FontChosen(target, String::new()), None);
+        }
+        let draft = settings.draft.as_ref().unwrap();
+        assert!(draft.appearance.font_family.is_empty());
+        assert!(
+            draft
+                .display
+                .optional_text
+                .iter()
+                .find(|f| f.path == "font.code")
+                .unwrap()
+                .value
+                .is_empty()
+        );
+        let rendered = draft.render().unwrap();
+        let reloaded = Draft::parse(rendered).unwrap();
+        assert!(reloaded.appearance.font_family.is_empty());
+        assert!(
+            reloaded
+                .display
+                .optional_text
+                .iter()
+                .find(|f| f.path == "font.code")
+                .unwrap()
+                .value
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn font_picker_escape_keeps_confirmation_priority_and_navigation_clears_it()
+    {
+        let mut settings = settings("");
+        settings.browser = None;
+        let _ = settings
+            .update(Message::FontOpened(font_picker::Target::Main), None);
+        assert!(matches!(
+            settings.escape_message(),
+            Message::FontDismiss(font_picker::Target::Main, None)
+        ));
+        settings.confirm_close = true;
+        assert!(matches!(settings.escape_message(), Message::KeepEditing));
+        settings.confirm_close = false;
+        let _ = settings.update(
+            Message::FontDismiss(font_picker::Target::Main, None),
+            None,
+        );
+        assert!(matches!(settings.escape_message(), Message::Close));
+        let _ = settings
+            .update(Message::FontOpened(font_picker::Target::Code), None);
+        let _ = settings.update(Message::Section(Section::Sidebar), None);
+        assert!(settings.fonts.active.is_none());
     }
 
     fn entry(id: u64, name: &str, background: iced::Color) -> Entry {
