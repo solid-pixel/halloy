@@ -1,8 +1,9 @@
 # Settings GUI
 
-This fork adds Networks, Appearance, Navigation, Chat display, Sidebar,
-Notifications and sounds, Highlight rules, and Keyboard shortcuts
-to a native Settings window. Open **Settings** from the sidebar user menu,
+This fork adds graphical editing for all supported configuration areas: General,
+Networks, Proxies, Appearance, Navigation, Chat display, Sidebar, Notifications
+and sounds, Highlight rules, Keyboard shortcuts, Commands, Previews, and
+Transfers and uploads. See the [field coverage checklist](settings-gui-coverage.md). Open **Settings** from the sidebar user menu,
 choose **Configuration: Open Settings**
 in the command bar, or press **⌘,** on macOS / **Ctrl+,** on Windows and Linux.
 The welcome screen also has an **Open Settings** button.
@@ -39,14 +40,23 @@ authentication settings. Each network has a server hostname, an optional
 port, a nickname, channels to join on connection, TLS, and automatic connection
 on launch. An empty port uses Halloy's default for the configured transport.
 
-SASL PLAIN and NickServ authentication can be edited here. Passwords entered in
-Settings are stored in `config.toml`. Certificate authentication, keyring entries,
-password commands, server passwords, proxies, and other advanced options remain
-available in the configuration file. Existing advanced authentication is shown
-as **Configured in file**; selecting another method replaces that network's SASL
-and NickServ authentication settings.
-Renaming a network keeps its existing keyring credentials by retaining explicit
-references to their original entries.
+Use **More network settings** to choose a group for identity, connection limits,
+WebSocket/TLS options, server passwords, NickServ, SASL PLAIN or EXTERNAL,
+joined channels and queries, upload endpoints, proxies, ignored messages,
+reroutes, metadata, capabilities, delivery conditions, protocol logs, and
+bouncer overrides. Lists and maps have individual add/edit/remove controls.
+Channel entries include their mute state.
+
+Password controls retain stored values without displaying them. A replacement
+is stored in `config.toml`; keyring, file and command controls edit references.
+Choose one password source. Keyring controls never retrieve or migrate secrets.
+SASL and NickServ can be configured independently. Renaming a network retains
+explicit references to its original keyring entries.
+
+**Proxies** edits the global proxy using the same controls. An unset network
+proxy inherits it. Tor requires a build with the Tor feature; unsupported
+selection explains that requirement. Map names are changed through add/remove,
+which avoids silently moving a credential to another keyring entry.
 
 New networks with automatic connection enabled connect after applying.
 Reconnect existing networks to use changes to the server or authentication.
@@ -59,8 +69,9 @@ appearance. Theme selections preview across all app windows before applying.
 The light and dark menus list only themes with matching background brightness,
 using the same classification as the gallery. The single-theme menu lists all
 themes. Existing selections are retained until you choose a replacement.
-Existing randomized theme lists are shown as **Configured in file** and kept
-until you choose another theme mode.
+Use the theme list mode for a randomized list or separate light/dark lists.
+Lists retain their saved choices and order until edited. The last ordinary or
+list-mode selection is the one saved by Apply.
 
 Select **Browse and download themes** to search the official Halloy gallery
 and filter light or dark themes. Selecting a theme previews it throughout Halloy
@@ -81,7 +92,8 @@ when Settings is reopened.
 Gallery requests use the current global proxy setting. With Halloy's built-in
 Tor proxy, gallery requests are unavailable; they do not fall back to a direct connection.
 
-Font family, text size, and line height require an application restart after
+Font family, code font, weights, stretch, emoji size, text size and line height
+require an application restart after
 applying. Empty font fields use Halloy's defaults. Interface scale applies
 immediately. Chat interface scale affects the chat windows;
 Settings stays at its default scale so the scale control remains reachable.
@@ -103,8 +115,10 @@ splits; changing it does not rearrange existing panes.
 Use the groups beneath **Chat display** to edit timestamps and date separators,
 repeated timestamps and nicknames, message spacing, backlog behavior, nickname
 colors and alignment, access levels, the user list, and the topic banner.
-Activity controls cover server messages, joins, parts, quits, nickname changes,
-and modes.
+Activity groups cover every supported server event and internal message, with
+visibility, smart windows, opacity, unread behavior and scope conditions. Ordered
+color rules, metadata formatting, replies, reactions, redactions and query closing
+also have controls.
 
 Read markers, composer visibility, formatting, nickname display, draft
 persistence, completion order, emoji, and typing indicators have their own
@@ -115,7 +129,7 @@ them. Timestamp and date formats use Halloy's existing format syntax.
 
 Set the position, width, server and channel ordering, menu buttons, label sizes,
 icon sizes, casing, and spacing. Separate groups control unread indicators,
-highlights, typing indicators, and scrollbars. Empty optional size fields use
+highlights, typing indicators, scrollbars, internal tool order and muting. Empty optional size fields use
 Halloy's defaults. Position changes apply immediately.
 
 Advanced values that do not fit a picker are shown as **Configured in file**.
@@ -141,8 +155,10 @@ not send a test notification or play audio.
 Conditions have separate channel, user, and server lists. Separate names with
 semicolons, or enter `*` for every name in that scope. Includes take priority over
 excludes. To notify only for a list, exclude `*` in all relevant scopes, then add
-the allowed names to Include. Existing compound criteria and server-message
-conditions are preserved and remain configurable in the file.
+the allowed names to Include. **Add condition** creates combined user, channel,
+server and server-message restrictions. All nonempty fields within one condition
+must match; an empty condition matches everything. The same editor is used for
+Channel Monitor, previews, activity and sidebar conditions.
 
 ## Highlight rules
 
@@ -177,6 +193,34 @@ listed actions; changes are validated together so bindings can be swapped.
 Message selection retains its built-in plain arrow keys. Direction bindings also
 enter message selection from chat. Settings always consumes its own Cmd/Ctrl+,
 gesture before editable fields receive text.
+
+## General and Commands
+
+General groups cover tooltips, update checks, initial window size and platform
+padding/decorations, rendering, logs, Config Editor indentation, context menus,
+metadata subscriptions and avatars, global display symbols/colors, CTCP replies,
+and Channel Monitor conditions. **Value source** distinguishes inherited defaults
+from explicit false, empty text and empty lists. Window, rendering, font and
+logging startup changes show restart advice.
+
+Commands groups cover command descriptions, aliases with placeholder arguments,
+optional local `/exec` execution and limits, sysinfo content, and default part/quit
+messages. Alias removal is staged and can be restored or reverted before Apply.
+Configuring an alias does not execute it.
+
+## Previews, transfers and uploads
+
+Preview groups cover link/card/image appearance and actions, animation, URL
+pattern filters, scope/compound conditions, request limits, user agent and image
+cache. Cache pickers offer Unlimited and First save only where supported.
+URL matching uses regular expressions; invalid expressions prevent saving.
+
+Transfers groups cover DCC enablement, passive mode, acceptance timeout,
+completion messages, save folder, automatic acceptance restrictions, and an
+optional DCC server. Enabling automatic acceptance requires a save folder.
+Configuring a DCC server requires both IP addresses and an ordered port range;
+these settings are validated together. Global upload controls cover enablement,
+button, paste and file drop. Per-network endpoints and credentials are in Networks.
 
 ## Saving
 

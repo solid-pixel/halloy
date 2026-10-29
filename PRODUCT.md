@@ -1,8 +1,9 @@
 # Halloy settings GUI fork
 
-This fork extends Halloy with graphical editing for Networks, Appearance,
-Navigation and panes, Chat display, Sidebar, Notifications and sounds, Highlight
-rules, and Keyboard shortcuts. The user authorized these areas and explicitly
+This fork extends Halloy with graphical editing for every supported configuration
+area: General, Networks, Proxies, Appearance, Navigation and panes, Chat display,
+Sidebar, Notifications and sounds, Highlight rules, Keyboard shortcuts, Commands,
+Previews, and Transfers and uploads. The user authorized these areas and explicitly
 requested Impeccable and Halloy’s existing design language.
 
 The initial audience is desktop Halloy users who want to configure the client
@@ -11,8 +12,17 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
 
 ## Scope and behavior
 
-- Networks: add, rename, and remove a server; edit hostname, port, nickname,
-  auto-join channels, TLS, automatic connection, SASL PLAIN, and NickServ.
+- Networks: add/rename/remove servers; connection, identity, timing, TLS,
+  WebSocket, password references, SASL PLAIN/EXTERNAL, NickServ, channels/queries,
+  upload endpoints, proxies, filters, reroutes, metadata, delivery, protocol logs
+  and supported bouncer overrides use grouped forms and structured rows.
+- Proxies: global HTTP/SOCKS5 settings and credential references; Tor explains
+  its required build feature. Keyring editors never resolve or migrate secrets.
+- General: application/window/platform/runtime/logging preferences, Config Editor,
+  context menus, metadata/avatar policies, display symbols, CTCP and monitor rules.
+- Commands: aliases, execution limits, sysinfo and default part/quit messages.
+- Previews: URL modes/patterns, card/image controls and conditions, requests/cache.
+- Transfers/uploads: DCC and acceptance, optional atomic server settings, upload controls.
 - Appearance: installed themes, light/dark theme selection, font family, text
   size, line height, and chat interface scale.
 - Navigation: chat-opening and click actions, a current-pane preset, split axis,
@@ -24,7 +34,7 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
 - Notifications: all existing general events and per-channel rules, system
   notifications, attention, content, sounds, delays, and scope conditions.
 - Highlights: nickname case matching, named word/regex rules, case options,
-  sounds, and scope conditions. Existing compound criteria stay in the file.
+  sounds, and scope conditions, including structured combined conditions.
 - Keyboard: all ordinary and message-focus actions, alternative bindings,
   clearing and platform defaults, parser errors and conflict validation.
 - Appearance includes a browser for the official Halloy theme gallery: search,
@@ -40,8 +50,8 @@ macOS, Windows, and Linux; native verification for this change runs on macOS.
 - Apply validates and saves the existing `config.toml`, then reloads Halloy.
   Other options and comments are retained. A backup is written before replacing
   the file, external edits block saving, and symlinks update their target.
-- Advanced authentication and randomized theme lists remain in the file unless
-  the user explicitly selects another configuration method.
+- Advanced authentication and randomized single/light/dark theme lists have
+  explicit structured controls. Untouched values retain their original format.
   Network renames preserve existing keyring credential references.
 - Theme gallery requests follow the current global proxy setting, including on
   Retry. Unsupported Tor requests fail without a direct connection.
@@ -86,3 +96,10 @@ Revert, Apply, and Close remain below the scrolling content.
 
 No change to Halloy’s brand, chat layout, IRC engine, or configuration format is
 part of this request. The fork keeps the upstream license and attribution.
+
+## Configuration coverage
+
+The [model checklist](docs/guides/settings-gui-coverage.md) inventories all 527
+public configuration model fields, including nested containers and runtime
+projections, plus tagged formats and bouncer overrides. Runtime-only server order
+has no numeric setting. Platform/build availability remains explicit.

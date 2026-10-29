@@ -59,7 +59,36 @@ impl Settings {
                 rows.push(control(index, field, error));
             }
         }
+        if let Some(media_area) = media_area(area) {
+            let error = self.validation_error.as_ref().and_then(|error| {
+                match error.target {
+                    data::config::settings::ValidationTarget::Media(field) => {
+                        Some(data::config::settings::remaining_media::Error {
+                            field,
+                            message: error.message.clone(),
+                        })
+                    }
+                    _ => None,
+                }
+            });
+            rows.extend(super::remaining_media::rows(
+                &draft.media,
+                media_area,
+                group,
+                error.as_ref(),
+            ));
+        }
         form = form.push(settings_rows(rows));
+        let display_error = self.display_error();
+        form = form.push(
+            super::remaining_display::view(
+                &draft.display,
+                area,
+                group,
+                display_error.as_ref(),
+            )
+            .map(Message::Display),
+        );
         container(
             scrollable(form.padding(iced::padding::right(12)))
                 .id("settings-form-scroll")
@@ -73,7 +102,17 @@ impl Settings {
 }
 
 pub(super) fn groups(draft: &Draft, area: Area) -> Vec<&'static str> {
-    let mut groups = vec![];
+    if matches!(area, Area::General | Area::Commands) {
+        return draft.general.groups(area);
+    }
+    if let Some(area) = media_area(area) {
+        return super::remaining_media::groups(area).to_vec();
+    }
+    let mut groups = if area == Area::Appearance {
+        vec!["Theme and layout"]
+    } else {
+        vec![]
+    };
     for field in &draft.preferences.fields {
         if field.spec.area == area && !groups.contains(&field.spec.group) {
             groups.push(field.spec.group);
@@ -82,13 +121,14 @@ pub(super) fn groups(draft: &Draft, area: Area) -> Vec<&'static str> {
     groups
 }
 
-fn control<'a>(
+pub(super) fn control<'a>(
     index: usize,
     field: &'a Field,
     error: Option<&'a str>,
 ) -> Element<'a, Message> {
     let widget = match field.spec.kind {
         Kind::Boolean if !field.is_custom() => checkbox(field.value == "true")
+            .id(format!("settings-preference-{index}"))
             .label(field.spec.label)
             .style(style::checkbox)
             .on_toggle(move |value| {
@@ -111,6 +151,7 @@ fn control<'a>(
             labelled(
                 field.spec.label,
                 pick_list(Some(selected), labels, String::clone)
+                    .id(format!("settings-preference-{index}"))
                     .on_select(move |label| {
                         Message::Preference(
                             index,
@@ -141,6 +182,7 @@ fn control<'a>(
                 ],
                 String::clone,
             )
+            .id(format!("settings-preference-{index}"))
             .on_select(move |label| {
                 Message::Preference(
                     index,
@@ -203,5 +245,16 @@ fn control<'a>(
         ]
         .spacing(4)
         .into()
+    }
+}
+
+fn media_area(
+    area: Area,
+) -> Option<data::config::settings::remaining_media::MediaArea> {
+    use data::config::settings::remaining_media::MediaArea;
+    match area {
+        Area::Previews => Some(MediaArea::Previews),
+        Area::Transfers => Some(MediaArea::Transfers),
+        _ => None,
     }
 }

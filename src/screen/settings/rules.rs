@@ -80,11 +80,14 @@ impl Settings {
                 content=content.push(text("These actions run during message selection. Plain arrow keys are built in. Direction bindings also enter message selection from chat.").size(12).style(theme::text::secondary));
             }
             let mut rows = vec![];
-            for (field_index, field) in group
-                .fields
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| group.visible(*i))
+            for (field_index, field) in
+                group.fields.iter().enumerate().filter(|(i, field)| {
+                    group.visible(*i)
+                        && !(group.conditions.is_some()
+                            && field.path.first().is_some_and(|key| {
+                                matches!(key.as_str(), "include" | "exclude")
+                            }))
+                })
             {
                 let group_index = self.rule_group;
                 let message = move |value| {
@@ -235,8 +238,26 @@ impl Settings {
             } else {
                 fields
             });
+            if let Some(conditions) = &group.conditions {
+                let error = self.validation_error.as_ref().and_then(|error| match error.target {
+                    ValidationTarget::RuleCondition { group, target } if group == self.rule_group => Some(data::config::settings::remaining_display::ValidationError { target, message: error.message.clone() }), _ => None,
+                });
+                let group_index = self.rule_group;
+                let conditions = super::remaining_display::view(
+                    conditions,
+                    data::config::settings::preferences::Area::General,
+                    "Conditions",
+                    error.as_ref(),
+                )
+                .map(move |event| Message::RuleCondition(group_index, event));
+                content = content.push(if self.confirm_rule_remove {
+                    keyboard::inactive(conditions)
+                } else {
+                    conditions
+                });
+            }
             if area != Area::Keyboard {
-                content=content.push(text("Conditions use semicolon-separated names, or * for all. Includes take priority over excludes; to allow only listed names, exclude * first. Additional conditions configured in the file are retained. Quote an entry containing a semicolon.").size(12).style(theme::text::secondary));
+                content=content.push(text("Conditions use semicolon-separated names, or * for all. Includes take priority over excludes; to allow only listed names, exclude * first. Each compound condition requires all its filled fields to match. Quote an entry containing a semicolon.").size(12).style(theme::text::secondary));
             }
             if group.removable && !self.confirm_rule_remove {
                 content =

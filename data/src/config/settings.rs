@@ -1,6 +1,10 @@
 //! Editable settings backed by the original document, rather than the runtime
 //! config (which contains defaults and resolved credentials).
 pub mod preferences;
+pub mod remaining_display;
+pub mod remaining_general;
+pub mod remaining_media;
+pub mod remaining_networks;
 pub mod rules;
 
 use std::collections::HashSet;
@@ -106,18 +110,8 @@ impl Network {
                 .and_then(Item::as_bool)
                 .unwrap_or(true),
             authentication,
-            username: plain
-                .map(|plain| string_at(plain.get("username")))
-                .unwrap_or_default(),
-            password: if authentication == Authentication::Sasl {
-                plain
-                    .map(|plain| string_at(plain.get("password")))
-                    .unwrap_or_default()
-            } else if authentication == Authentication::NickServ {
-                string("nick_password")
-            } else {
-                String::new()
-            },
+            username: String::new(),
+            password: String::new(),
         }
     }
 
@@ -177,14 +171,37 @@ pub struct Settings {
     pub appearance: Appearance,
     pub preferences: preferences::Preferences,
     pub rules: rules::Rules,
+    pub media: remaining_media::Media,
+    pub general: remaining_general::Draft,
+    pub display: remaining_display::DisplayEditors,
+    pub network_extras: Vec<remaining_networks::Draft>,
+    pub global_proxy: remaining_networks::Draft,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationTarget {
-    Network { index: usize, field: &'static str },
+    Network {
+        index: usize,
+        field: &'static str,
+    },
     Appearance(&'static str),
     Preference(usize),
-    Rule { group: usize, field: usize },
+    Media(usize),
+    General(remaining_general::Target),
+    Display(remaining_display::Target),
+    NetworkExtra {
+        index: usize,
+        path: remaining_networks::Path,
+    },
+    GlobalProxy(remaining_networks::Path),
+    RuleCondition {
+        group: usize,
+        target: remaining_display::Target,
+    },
+    Rule {
+        group: usize,
+        field: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -267,6 +284,19 @@ impl Settings {
                 .unwrap_or("left")
                 .to_owned(),
         };
+        let network_extras = document
+            .get("servers")
+            .and_then(Item::as_table_like)
+            .map(|servers| {
+                servers
+                    .iter()
+                    .filter_map(|(_, item)| {
+                        item.as_table_like()
+                            .map(remaining_networks::Draft::network)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let preferences = preferences::Preferences::parse(&document)?;
         Ok(Self {
             source,
@@ -276,6 +306,11 @@ impl Settings {
             appearance,
             preferences,
             rules: rules::Rules::parse(&document),
+            media: remaining_media::Media::parse(&document)?,
+            general: remaining_general::Draft::parse(&document)?,
+            display: remaining_display::DisplayEditors::parse(&document)?,
+            network_extras,
+            global_proxy: remaining_networks::Draft::global_proxy(&document),
         })
     }
 
@@ -284,6 +319,14 @@ impl Settings {
             || self.appearance != self.original_appearance
             || self.preferences.is_dirty()
             || self.rules.is_dirty()
+            || self.media.is_dirty()
+            || self.general.is_dirty()
+            || self.display.is_dirty()
+            || self.global_proxy.is_dirty()
+            || self
+                .network_extras
+                .iter()
+                .any(remaining_networks::Draft::is_dirty)
     }
 
     pub fn font_changed(&self) -> bool {
@@ -294,8 +337,31 @@ impl Settings {
             || a.line_height != b.line_height
     }
 
+    /// Startup-only options need a fresh application process after saving.
+    pub fn restart_required(&self) -> bool {
+        self.display
+            .optional_text
+            .iter()
+            .any(|field| field.path.starts_with("font.") && field.is_dirty())
+            || self.general.fields.iter().any(|field| {
+                field.changed()
+                    && (field.path.starts_with("runtime.")
+                        || field.path.starts_with("window.")
+                        || field.path.starts_with("platform_specific.")
+                        || field.path.starts_with("logs."))
+            })
+            || self.font_changed()
+            || self.preferences.fields.iter().any(|field| {
+                field.value != field.original_value()
+                    && field.spec.path.starts_with("font.")
+            })
+    }
+
     pub fn networks_changed(&self) -> bool {
-        self.networks != self.original_networks
+        self.network_extras
+            .iter()
+            .any(remaining_networks::Draft::is_dirty)
+            || self.networks != self.original_networks
     }
 
     pub fn has_configured_theme(&self) -> bool {
@@ -397,6 +463,17 @@ impl Settings {
                 network.authentication,
                 Authentication::Sasl | Authentication::NickServ
             ) && network.password.is_empty()
+                && self
+                    .original_networks
+                    .iter()
+                    .find(|old| {
+                        Some(&old.name) == network.original_name.as_ref()
+                    })
+                    .is_none_or(|old| {
+                        old.authentication != network.authentication
+                            || old.password != network.password
+                            || old.username != network.username
+                    })
             {
                 return Err(invalid(
                     "password",
@@ -406,6 +483,26 @@ impl Settings {
                     ),
                 ));
             }
+        }
+        for (index, extra) in self.network_extras.iter().enumerate() {
+            if let Some(error) = extra.validation_error() {
+                return Err(ValidationError {
+                    message: format!(
+                        "{}: {}",
+                        self.networks[index].name, error.message
+                    ),
+                    target: ValidationTarget::NetworkExtra {
+                        index,
+                        path: error.path,
+                    },
+                });
+            }
+        }
+        if let Some(error) = self.global_proxy.validation_error() {
+            return Err(ValidationError {
+                message: error.message,
+                target: ValidationTarget::GlobalProxy(error.path),
+            });
         }
         let a = &self.appearance;
         let b = &self.original_appearance;
@@ -434,6 +531,26 @@ impl Settings {
                 target: ValidationTarget::Preference(index),
             });
         }
+        for (group, rule) in self
+            .rules
+            .groups
+            .iter()
+            .enumerate()
+            .filter(|(_, rule)| !rule.removed)
+        {
+            if let Some(conditions) = &rule.conditions
+                && let Some(error) =
+                    conditions.validation_error(&DocumentMut::new())
+            {
+                return Err(ValidationError {
+                    message: error.message,
+                    target: ValidationTarget::RuleCondition {
+                        group,
+                        target: error.target,
+                    },
+                });
+            }
+        }
         if let Ok(document) = self.source.parse::<DocumentMut>()
             && let Some((group, field, message)) =
                 self.rules.validation_error(&document)
@@ -442,6 +559,32 @@ impl Settings {
                 message,
                 target: ValidationTarget::Rule { group, field },
             });
+        }
+        if let Ok(mut document) = self.source.parse::<DocumentMut>() {
+            self.preferences
+                .render_into(&mut document)
+                .map_err(|message| ValidationError {
+                    message,
+                    target: ValidationTarget::Media(0),
+                })?;
+            self.media.render_into(&mut document).map_err(|error| {
+                ValidationError {
+                    message: error.message,
+                    target: ValidationTarget::Media(error.field),
+                }
+            })?;
+            self.general.validate(&document).map_err(|error| {
+                ValidationError {
+                    message: error.message,
+                    target: ValidationTarget::General(error.target),
+                }
+            })?;
+            if let Some(error) = self.display.validation_error(&document) {
+                return Err(ValidationError {
+                    message: error.message,
+                    target: ValidationTarget::Display(error.target),
+                });
+            }
         }
         Ok(())
     }
@@ -455,7 +598,7 @@ impl Settings {
         if self.networks_changed() {
             let original_document = document.clone();
             table(&mut document, "servers")?.clear();
-            for network in &self.networks {
+            for (network_index, network) in self.networks.iter().enumerate() {
                 let old = self.original_networks.iter().find(|old| {
                     Some(&old.name) == network.original_name.as_ref()
                 });
@@ -572,6 +715,9 @@ impl Settings {
                     }
                     Authentication::None | Authentication::Advanced => {}
                 }
+                if let Some(extra) = self.network_extras.get(network_index) {
+                    extra.render_into(target).map_err(|error| error.message)?;
+                }
                 if let Some(old) = old
                     && old.name != network.name
                 {
@@ -671,9 +817,19 @@ impl Settings {
             );
         }
         self.preferences.render_into(&mut document)?;
+        self.media
+            .render_into(&mut document)
+            .map_err(|error| error.message)?;
+        self.general
+            .render_into(&mut document)
+            .map_err(|error| error.message)?;
+        self.display.render_into(&mut document)?;
         self.rules
             .render_into(&mut document)
             .map_err(|(_, _, message)| message)?;
+        self.global_proxy
+            .render_into(document.as_table_mut())
+            .map_err(|error| error.message)?;
         let contents = document.to_string();
         Config::validate(&contents).map_err(|error| error.to_string())?;
         Ok(contents)
@@ -1235,5 +1391,91 @@ password_keyring = true
                 0o600
             );
         }
+    }
+    #[test]
+    fn remaining_editors_share_one_preserving_transaction_and_rename() {
+        use remaining_networks::Part;
+        let source = "# keep this comment\ntheme = 'ferra'\n[servers.\"qa.net\"]\nserver='127.0.0.1'\nnickname='qa'\nautoconnect=false\npassword_keyring=true # reference only\n";
+        let mut settings = Settings::parse(source.into()).unwrap();
+        let username = settings.network_extras[0]
+            .fields
+            .iter()
+            .position(|field| field.path == vec![Part::Key("username".into())])
+            .unwrap();
+        settings.network_extras[0].edit(username, Some("new-user".into()));
+        settings.networks[0].name = "renamed.net".into();
+        let tooltips = settings
+            .general
+            .fields
+            .iter()
+            .position(|field| field.path == "tooltips")
+            .unwrap();
+        settings.general.edit(tooltips, "\"none\"".into());
+        settings
+            .media
+            .fields
+            .iter_mut()
+            .find(|field| field.path == "preview.request.user_agent")
+            .unwrap()
+            .value = "QA user agent".into();
+        let filter = settings
+            .display
+            .filters
+            .iter()
+            .position(|filter| filter.path == "channel_monitor.include")
+            .unwrap();
+        settings.display.add_criterion(filter);
+        settings.display.filters[filter].criteria[0].values.user =
+            "qa-user".into();
+        let result = settings.render().unwrap();
+        assert!(result.starts_with("# keep this comment"));
+        assert!(result.contains("# reference only"));
+        let parsed: toml::Value = toml::from_str(&result).unwrap();
+        let network = &parsed["servers"]["renamed.net"];
+        assert_eq!(network["username"].as_str(), Some("new-user"));
+        assert_eq!(
+            network["password_keyring"].as_str(),
+            Some(keyring::server_password_key("qa.net").as_str())
+        );
+        assert_eq!(
+            parsed["preview"]["request"]["user_agent"].as_str(),
+            Some("QA user agent")
+        );
+        assert_eq!(
+            parsed["channel_monitor"]["include"]["criteria"][0]["user"]
+                .as_str(),
+            Some("qa-user")
+        );
+        assert!(
+            Settings::parse(result)
+                .unwrap()
+                .network_extras
+                .iter()
+                .all(|extra| !extra.is_dirty())
+        );
+    }
+
+    #[test]
+    fn compound_notification_edits_keep_ordinary_changes_and_comments() {
+        let source = "[notifications.highlight]\nshow_toast=true # keep\ninclude={channels=['#old'],criteria=[{user='old',server='qa'}]}\n";
+        let mut settings = Settings::parse(source.into()).unwrap();
+        let group = settings
+            .rules
+            .groups
+            .iter_mut()
+            .find(|group| group.title == "Highlights")
+            .unwrap();
+        let conditions = group.conditions.as_mut().unwrap();
+        conditions.filters[0].criteria[0].values.user = "new".into();
+        let rendered = settings.render().unwrap();
+        assert!(rendered.contains("# keep"));
+        let parsed: toml::Value = toml::from_str(&rendered).unwrap();
+        assert_eq!(parsed["notifications"]["highlight"]["include"]["criteria"][0]["server"].as_str(), Some("qa"));
+        assert_eq!(parsed["notifications"]["highlight"]["include"]["criteria"][0]["user"].as_str(), Some("new"));
+        assert_eq!(
+            parsed["notifications"]["highlight"]["include"]["channels"][0]
+                .as_str(),
+            Some("#old")
+        );
     }
 }

@@ -31,6 +31,7 @@ where
     V: Borrow<T> + 'a,
     Theme: Catalog,
 {
+    id: Option<widget::Id>,
     options: L,
     to_string: Box<dyn Fn(&T) -> String + 'a>,
     on_select: Option<Box<dyn Fn(T) -> Message + 'a>>,
@@ -66,6 +67,7 @@ where
         to_string: impl Fn(&T) -> String + 'a,
     ) -> Self {
         Self {
+            id: None,
             to_string: Box::new(to_string),
             on_select: None,
             on_open: None,
@@ -86,6 +88,11 @@ where
             last_status: None,
             menu_height: Length::Shrink,
         }
+    }
+
+    pub fn id(mut self, id: impl Into<widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     pub fn width(mut self, width: impl Into<Length>) -> Self {
@@ -638,6 +645,9 @@ where
         operation: &mut dyn widget::Operation,
     ) {
         let state = tree.state.downcast_mut::<State<Renderer::Paragraph>>();
+        if let Some(id) = &self.id {
+            state.focus.id = id.clone();
+        }
         if self.on_select.is_some() {
             operation.focusable(
                 Some(&state.focus.id.clone()),

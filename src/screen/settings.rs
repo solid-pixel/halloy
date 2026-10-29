@@ -15,12 +15,21 @@ use crate::{Theme, font, open_url, theme, window};
 mod keyboard;
 use keyboard::{button, checkbox, pick_list};
 mod preferences;
+mod remaining_display;
+mod remaining_general;
+mod remaining_media;
+mod remaining_networks;
 mod rules;
 mod style;
 mod theme_browser;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
+    Proxies,
+    General,
+    Commands,
+    Previews,
+    Transfers,
     Networks,
     Appearance,
     Navigation,
@@ -73,6 +82,12 @@ pub enum Message {
     Sidebar(String),
     PreferenceGroup(usize),
     Preference(usize, String),
+    MediaEdit(usize, String),
+    General(remaining_general::Message),
+    Display(remaining_display::Event),
+    RuleCondition(usize, remaining_display::Event),
+    NetworkExtra(usize, remaining_networks::Message),
+    GlobalProxy(remaining_networks::Message),
     RuleGroup(usize),
     RuleEdit(usize, usize, String),
     RuleReset(usize, usize),
@@ -106,6 +121,8 @@ pub struct Settings {
     rule_group: usize,
     confirm_rule_remove: bool,
     selected: Option<usize>,
+    network_states: Vec<remaining_networks::State>,
+    proxy_state: remaining_networks::State,
     themes: Vec<String>,
     installed_themes: Vec<data::Theme>,
     browser: Option<theme_browser::Browser>,
@@ -150,6 +167,16 @@ impl Settings {
             ..window::settings(config)
         });
         let draft = Draft::load();
+        let network_states = draft
+            .as_ref()
+            .map(|draft| {
+                draft
+                    .networks
+                    .iter()
+                    .map(|_| remaining_networks::State::default())
+                    .collect()
+            })
+            .unwrap_or_default();
         let selected = draft
             .as_ref()
             .ok()
@@ -182,6 +209,8 @@ impl Settings {
                 preference_group: 0,
                 rule_group: 0,
                 confirm_rule_remove: false,
+                network_states,
+                proxy_state: remaining_networks::State::default(),
                 selected,
                 themes,
                 installed_themes,
@@ -221,19 +250,27 @@ impl Settings {
             })
             .map_or(name.clone(), |theme| theme.name.clone());
         if let Ok(draft) = &mut self.draft {
+            draft.display.themes.mode =
+                data::config::settings::remaining_display::ThemeListMode::Keep;
             match target {
                 theme_browser::Target::Single => {
                     draft.appearance.mode = ThemeMode::Single;
                     draft.appearance.theme = name.clone();
                 }
                 theme_browser::Target::Light => {
+                    draft.appearance.mode = ThemeMode::System;
                     draft.appearance.light = name.clone();
                 }
                 theme_browser::Target::Dark => {
+                    draft.appearance.mode = ThemeMode::System;
                     draft.appearance.dark = name.clone();
                 }
             }
         }
+        self.preview_named(name);
+    }
+
+    fn preview_named(&mut self, name: String) {
         self.preview = self
             .installed_themes
             .iter()
@@ -331,6 +368,28 @@ impl Settings {
         {
             return (Task::none(), None);
         }
+        if self.extra_confirmation()
+            && matches!(message, Message::Close | Message::Quit)
+        {
+            return self.update(self.escape_message(), proxy);
+        }
+        if self.extra_confirmation()
+            && !matches!(
+                message,
+                Message::NetworkExtra(
+                    _,
+                    remaining_networks::Message::ConfirmRemove
+                        | remaining_networks::Message::CancelRemove
+                ) | Message::GlobalProxy(
+                    remaining_networks::Message::ConfirmRemove
+                        | remaining_networks::Message::CancelRemove
+                ) | Message::Focus(_)
+                    | Message::Close
+                    | Message::Quit
+            )
+        {
+            return (Task::none(), None);
+        }
         match message {
             Message::BrowseThemes => {
                 self.refresh_themes();
@@ -412,8 +471,9 @@ impl Settings {
                         let Ok(draft) = &self.draft else {
                             return (Task::none(), None);
                         };
-                        self.restart_needed |= draft.font_changed();
-                        let networks_changed = draft.networks_changed();
+                        self.restart_needed |= draft.restart_required();
+                        let networks_changed = draft.networks_changed()
+                            || draft.global_proxy.is_dirty();
                         let selection =
                             draft.rules.groups.get(self.rule_group).map(
                                 |selected| {
@@ -454,7 +514,7 @@ impl Settings {
                         }
                         self.pending_themes.clear();
                         self.status = Some(if self.restart_needed {
-                            "Saved. Restart Halloy to apply font changes."
+                            "Saved. Restart Halloy to apply startup settings."
                         } else if networks_changed {
                             "Saved. Reconnect existing networks to use connection changes."
                         } else { "Settings applied." }.into());
@@ -508,6 +568,18 @@ impl Settings {
                 self.preview = None;
                 self.pending_themes.clear();
                 self.draft = Draft::load();
+                self.network_states = self
+                    .draft
+                    .as_ref()
+                    .map(|draft| {
+                        draft
+                            .networks
+                            .iter()
+                            .map(|_| remaining_networks::State::default())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.proxy_state = remaining_networks::State::default();
                 if let (Some(area), Ok(draft)) =
                     (rules::area(self.section), &self.draft)
                 {
@@ -654,7 +726,103 @@ impl Settings {
                             None,
                         );
                     }
+                    Message::NetworkExtra(index, message) => {
+                        if let (Some(state), Some(extra)) = (
+                            self.network_states.get_mut(index),
+                            draft.network_extras.get_mut(index),
+                        ) {
+                            let focus =
+                                state.update(extra, message).or_else(|| {
+                                    state
+                                        .confirmation_ids()
+                                        .map(|ids| ids[0].clone())
+                                });
+                            if let Some(id) = focus {
+                                return (keyboard::focus(id), None);
+                            }
+                        }
+                    }
+                    Message::GlobalProxy(message) => {
+                        let focus = self
+                            .proxy_state
+                            .update(&mut draft.global_proxy, message)
+                            .or_else(|| {
+                                self.proxy_state
+                                    .confirmation_ids()
+                                    .map(|ids| ids[0].clone())
+                            });
+                        if let Some(id) = focus {
+                            return (keyboard::focus(id), None);
+                        }
+                    }
+                    Message::RuleCondition(group, event) => {
+                        if let Some(conditions) = draft
+                            .rules
+                            .groups
+                            .get_mut(group)
+                            .and_then(|rule| rule.conditions.as_mut())
+                        {
+                            remaining_display::update(conditions, event);
+                        }
+                    }
+                    Message::Display(event) => {
+                        use data::config::settings::remaining_display::ThemeListMode;
+                        let preview = match &event {
+                            remaining_display::Event::ThemeValue(
+                                _,
+                                _,
+                                name,
+                            )
+                            | remaining_display::Event::ThemeAdd(_, name) => {
+                                Some(name.clone())
+                            }
+                            remaining_display::Event::ThemeMode(
+                                ThemeListMode::Keep,
+                            ) => Some(draft.appearance.theme.clone()),
+                            _ => None,
+                        };
+                        if let remaining_display::Event::ThemeMode(mode) =
+                            &event
+                        {
+                            draft.appearance.mode =
+                                if *mode == ThemeListMode::Keep {
+                                    ThemeMode::Single
+                                } else {
+                                    ThemeMode::Configured
+                                };
+                        }
+                        remaining_display::update(&mut draft.display, event);
+                        if draft.display.lists.iter().any(|list| {
+                            list.path == "buffer.nickname.color"
+                                && list.is_dirty()
+                        }) && let Some(field) =
+                            draft.preferences.fields.iter_mut().find(|field| {
+                                field.spec.path == "buffer.nickname.color"
+                            })
+                        {
+                            field.value = field.original_value().to_owned();
+                        }
+                        if let Some(name) = preview {
+                            self.preview_named(name);
+                        }
+                    }
+                    Message::General(remaining_general::Message::Display(
+                        event,
+                    )) => remaining_display::update(&mut draft.display, event),
+                    Message::General(message) => {
+                        remaining_general::update(&mut draft.general, message);
+                    }
+                    Message::MediaEdit(index, value) => {
+                        if let Some(field) = draft.media.fields.get_mut(index) {
+                            field.value = value;
+                        }
+                    }
                     Message::Preference(index, value) => {
+                        if draft.preferences.fields.get(index).is_some_and(
+                            |field| field.spec.path == "buffer.nickname.color",
+                        ) {
+                            draft.display.reset_palette();
+                        }
                         if let Some(field) =
                             draft.preferences.fields.get_mut(index)
                         {
@@ -688,6 +856,9 @@ impl Settings {
                         draft
                             .networks
                             .push(Network::new(format!("Network {number}")));
+                        draft.network_extras.push(data::config::settings::remaining_networks::Draft::parse_network("").expect("empty network draft"));
+                        self.network_states
+                            .push(remaining_networks::State::default());
                         self.selected = Some(draft.networks.len() - 1);
                         self.confirm_remove = false;
                         return (keyboard::focus(Field::Name.id()), None);
@@ -703,6 +874,12 @@ impl Settings {
                             .filter(|index| *index < draft.networks.len())
                         {
                             draft.networks.remove(index);
+                            if index < draft.network_extras.len() {
+                                draft.network_extras.remove(index);
+                            }
+                            if index < self.network_states.len() {
+                                self.network_states.remove(index);
+                            }
                             self.selected = (!draft.networks.is_empty())
                                 .then(|| index.min(draft.networks.len() - 1));
                         }
@@ -764,6 +941,7 @@ impl Settings {
                         }
                     }
                     Message::ThemeMode(value) => {
+                        draft.display.themes.mode = data::config::settings::remaining_display::ThemeListMode::Keep;
                         draft.appearance.mode = value;
                         self.preview = None;
                         if value == ThemeMode::Single {
@@ -818,7 +996,11 @@ impl Settings {
                                                     || name
                                                         == draft.appearance.dark
                                             }
-                                            ThemeMode::Configured => false,
+                                            ThemeMode::Configured => draft
+                                                .display
+                                                .themes
+                                                .selected()
+                                                .contains(&name.as_str()),
                                         };
                                         used && !self
                                             .installed_themes
@@ -887,6 +1069,7 @@ impl Settings {
             }
             ValidationTarget::Appearance(field) => {
                 self.section = Section::Appearance;
+                self.preference_group = 0;
                 match field {
                     "font_size" => Field::FontSize,
                     "line_height" => Field::LineHeight,
@@ -902,11 +1085,118 @@ impl Settings {
                 }
                 format!("settings-rule-{group}-{field}")
             }
+            ValidationTarget::NetworkExtra { index, ref path } => {
+                self.section = Section::Networks;
+                self.selected = Some(index);
+                if let (Ok(draft), Some(state)) =
+                    (&self.draft, self.network_states.get_mut(index))
+                {
+                    state.reveal(&draft.network_extras[index], data::config::settings::remaining_networks::ValidationError { path: path.clone(), message: error.message.clone() })
+                } else {
+                    String::new()
+                }
+            }
+            ValidationTarget::GlobalProxy(ref path) => {
+                self.section = Section::Proxies;
+                if let Ok(draft) = &self.draft {
+                    self.proxy_state.reveal(&draft.global_proxy, data::config::settings::remaining_networks::ValidationError { path: path.clone(), message: error.message.clone() })
+                } else {
+                    String::new()
+                }
+            }
+            ValidationTarget::RuleCondition { group, target } => {
+                if let Ok(draft) = &self.draft {
+                    self.section =
+                        rules::section(draft.rules.groups[group].area);
+                    self.rule_group = group;
+                }
+                self.draft
+                    .as_ref()
+                    .ok()
+                    .and_then(|draft| {
+                        draft.rules.groups[group].conditions.as_ref()
+                    })
+                    .map_or_else(
+                        || target.input_id(),
+                        |conditions| conditions.focus_id(target),
+                    )
+            }
+            ValidationTarget::Display(target) => {
+                if let Ok(draft) = &self.draft {
+                    let (area, group) = draft.display.location(target);
+                    self.section = match area {
+                        Some(Area::Chat) => Section::Chat,
+                        Some(Area::Sidebar) => Section::Sidebar,
+                        Some(Area::Navigation) => Section::Navigation,
+                        Some(Area::General) => Section::General,
+                        Some(Area::Previews) => Section::Previews,
+                        _ => Section::Appearance,
+                    };
+                    self.preference_group = area
+                        .and_then(|area| {
+                            preferences::groups(draft, area)
+                                .iter()
+                                .position(|name| *name == group)
+                        })
+                        .unwrap_or(0);
+                }
+                self.draft.as_ref().map_or_else(
+                    |_| target.input_id(),
+                    |draft| draft.display.focus_id(target),
+                )
+            }
+            ValidationTarget::General(ref target) => {
+                if let Ok(draft) = &self.draft {
+                    let (area, group) = remaining_general::group_for_target(
+                        &draft.general,
+                        target,
+                    );
+                    self.section = if area == Area::General {
+                        Section::General
+                    } else {
+                        Section::Commands
+                    };
+                    self.preference_group = draft
+                        .general
+                        .groups(area)
+                        .iter()
+                        .position(|name| *name == group)
+                        .unwrap_or(0);
+                }
+                remaining_general::focus_id(target)
+            }
+            ValidationTarget::Media(index) => {
+                if let Ok(draft) = &self.draft
+                    && let Some(field) = draft.media.fields.get(index)
+                {
+                    let area = match field.area {
+                        data::config::settings::remaining_media::MediaArea::Previews => Area::Previews,
+                        data::config::settings::remaining_media::MediaArea::Transfers => Area::Transfers,
+                    };
+                    self.section = if area == Area::Previews {
+                        Section::Previews
+                    } else {
+                        Section::Transfers
+                    };
+                    self.preference_group = preferences::groups(draft, area)
+                        .iter()
+                        .position(|group| *group == field.group)
+                        .unwrap_or(0);
+                    field.id()
+                } else {
+                    String::new()
+                }
+            }
             ValidationTarget::Preference(index) => {
                 if let Ok(draft) = &self.draft
                     && let Some(field) = draft.preferences.fields.get(index)
                 {
                     self.section = match field.spec.area {
+                        Area::General => Section::General,
+                        Area::Appearance => Section::Appearance,
+                        Area::Commands => Section::Commands,
+                        Area::Previews => Section::Previews,
+                        Area::Transfers => Section::Transfers,
                         Area::Navigation => Section::Navigation,
                         Area::Chat => Section::Chat,
                         Area::Sidebar => Section::Sidebar,
@@ -939,6 +1229,33 @@ impl Settings {
         let body: Element<_> = match &self.draft {
             Ok(draft) => match self.section {
                 Section::Networks => self.networks(draft),
+                Section::Proxies => responsive(move |size| {
+                    scrollable(
+                        self.proxy_state
+                            .view(&draft.global_proxy, size.width < 440.0)
+                            .map(Message::GlobalProxy),
+                    )
+                    .id("settings-form-scroll")
+                    .style(style::scrollable)
+                    .height(Length::Fill)
+                })
+                .into(),
+                Section::General => self.general(
+                    draft,
+                    data::config::settings::preferences::Area::General,
+                ),
+                Section::Commands => self.general(
+                    draft,
+                    data::config::settings::preferences::Area::Commands,
+                ),
+                Section::Previews => self.preferences(
+                    draft,
+                    data::config::settings::preferences::Area::Previews,
+                ),
+                Section::Transfers => self.preferences(
+                    draft,
+                    data::config::settings::preferences::Area::Transfers,
+                ),
                 Section::Notifications
                 | Section::Highlights
                 | Section::Shortcuts => self.rules(draft),
@@ -1043,7 +1360,8 @@ impl Settings {
         }
         let confirming = self.confirm_close
             || self.confirm_remove
-            || self.confirm_rule_remove;
+            || self.confirm_rule_remove
+            || self.extra_confirmation();
         let heading: Element<_> = if confirming {
             keyboard::inactive(heading)
         } else {
@@ -1059,12 +1377,14 @@ impl Settings {
         } else {
             body
         };
-        let footer: Element<_> =
-            if self.confirm_remove || self.confirm_rule_remove {
-                keyboard::inactive(footer)
-            } else {
-                footer.into()
-            };
+        let footer: Element<_> = if self.confirm_remove
+            || self.confirm_rule_remove
+            || self.extra_confirmation()
+        {
+            keyboard::inactive(footer)
+        } else {
+            footer.into()
+        };
         let content = container(
             column![
                 heading,
@@ -1110,7 +1430,16 @@ impl Settings {
     }
 
     fn escape_message(&self) -> Message {
-        if self.confirm_close {
+        if self.extra_confirmation() {
+            if self.section == Section::Proxies {
+                Message::GlobalProxy(remaining_networks::Message::CancelRemove)
+            } else {
+                Message::NetworkExtra(
+                    self.selected.unwrap_or(0),
+                    remaining_networks::Message::CancelRemove,
+                )
+            }
+        } else if self.confirm_close {
             Message::KeepEditing
         } else if self.confirm_rule_remove {
             Message::RuleCancelRemove
@@ -1126,7 +1455,9 @@ impl Settings {
     fn navigation(&self) -> Element<'_, Message> {
         let mut navigation = column![].spacing(4);
         for (section, label) in [
+            (Section::General, "General"),
             (Section::Networks, "Networks"),
+            (Section::Proxies, "Proxies"),
             (Section::Appearance, "Appearance"),
             (Section::Navigation, "Navigation"),
             (Section::Chat, "Chat display"),
@@ -1134,6 +1465,9 @@ impl Settings {
             (Section::Notifications, "Notifications & sounds"),
             (Section::Highlights, "Highlight rules"),
             (Section::Shortcuts, "Keyboard shortcuts"),
+            (Section::Commands, "Commands"),
+            (Section::Previews, "Previews"),
+            (Section::Transfers, "Transfers & uploads"),
         ] {
             let selected = self.section == section;
             navigation = navigation.push(section_tab(
@@ -1209,12 +1543,12 @@ impl Settings {
                 Message::Select(index),
             ));
         }
-        let list = if self.confirm_remove {
+        let list = if self.confirm_remove || self.extra_confirmation() {
             keyboard::inactive(list)
         } else {
             list.into()
         };
-        let add = if self.confirm_remove {
+        let add = if self.confirm_remove || self.extra_confirmation() {
             keyboard::inactive(action("Add network", Message::Add))
         } else {
             action("Add network", Message::Add)
@@ -1243,14 +1577,6 @@ impl Settings {
         let form: Element<_> = if let Some(network) =
             self.selected.and_then(|index| draft.networks.get(index))
         {
-            let mut authentication = vec![
-                Authentication::None,
-                Authentication::Sasl,
-                Authentication::NickServ,
-            ];
-            if draft.has_advanced_authentication(network) {
-                authentication.push(Authentication::Advanced);
-            }
             let connection = vec![
                 self.field_with_layout(
                     "Network name",
@@ -1300,66 +1626,35 @@ impl Settings {
                     false,
                     stacked,
                 ),
-                self.field_with_layout(
-                    "Join channels on connect",
-                    "#halloy, #rust",
-                    &network.channels,
-                    Field::Channels,
-                    false,
-                    stacked,
-                ),
                 checkbox(network.autoconnect)
                     .label("Connect automatically on launch")
                     .on_toggle(Message::Autoconnect)
                     .style(style::checkbox)
                     .into(),
             ];
-            let mut authentication_rows = vec![labelled_with_layout(
-                "Method",
-                pick_list(
-                    Some(network.authentication),
-                    authentication,
-                    Authentication::to_string,
-                )
-                .on_select(Message::Authentication)
-                .style(style::pick_list)
-                .menu_style(style::menu)
-                .width(Length::Fill)
-                .padding(6)
-                .into(),
-                320.0,
-                stacked,
-            )];
-            match network.authentication {
-                Authentication::Sasl => {
-                    authentication_rows.push(self.field_with_layout(
-                        "Account name",
-                        "Use nickname",
-                        &network.username,
-                        Field::Username,
-                        false,
-                        stacked,
-                    ));
-                }
-                Authentication::Advanced => {
-                    authentication_rows.push(text("Certificate, keyring and command settings are managed in the config file. Choosing another method replaces this network’s authentication settings.").style(theme::text::secondary).into());
-                }
-                _ => {}
-            }
-            if matches!(
-                network.authentication,
-                Authentication::Sasl | Authentication::NickServ
-            ) {
-                authentication_rows.push(column![self.field_with_layout("Password", "Account password", &network.password, Field::Password, true, stacked), text("Passwords entered here are stored in config.toml. Use the config file for keyring or password-command authentication.").size(12).style(theme::text::secondary)].spacing(4).into());
-            }
             let mut form = column![
                 text(&network.name)
                     .font(font::PRIMARY_BOLD.clone())
                     .size(16),
                 settings_group("Connection", connection),
-                settings_group("Authentication", authentication_rows),
             ]
             .spacing(16);
+            if let Some(index) = self.selected
+                && let (Some(state), Some(extra)) = (
+                    self.network_states.get(index),
+                    draft.network_extras.get(index),
+                )
+            {
+                if state.confirmation_open() {
+                    form = column![state.view(extra, stacked).map(
+                        move |message| Message::NetworkExtra(index, message)
+                    )];
+                } else {
+                    form = form.push(state.view(extra, stacked).map(
+                        move |message| Message::NetworkExtra(index, message),
+                    ));
+                }
+            }
             form = form.push(text("Existing connections use changed server and authentication settings after reconnecting.").style(theme::text::secondary));
             if self.confirm_remove {
                 let background: Element<_> = keyboard::inactive(form);
@@ -1375,7 +1670,7 @@ impl Settings {
                         ]
                         .spacing(8),
                     );
-            } else {
+            } else if !self.extra_confirmation() {
                 form = form.push(action("Remove network…", Message::Remove));
             }
             scrollable(form.padding(iced::padding::right(12)))
@@ -1508,21 +1803,28 @@ impl Settings {
 
     fn appearance<'a>(&'a self, draft: &'a Draft) -> Element<'a, Message> {
         let a = &draft.appearance;
+        let display_error = self.display_error();
+        let keep = draft.display.themes.mode
+            == data::config::settings::remaining_display::ThemeListMode::Keep;
         let mut modes = vec![ThemeMode::Single, ThemeMode::System];
         if draft.has_configured_theme() {
             modes.push(ThemeMode::Configured);
         }
-        let mut theme_rows = vec![labelled(
-            "Mode",
-            pick_list(Some(a.mode), modes, ThemeMode::to_string)
-                .on_select(Message::ThemeMode)
-                .style(style::pick_list)
-                .menu_style(style::menu)
-                .width(Length::Fill)
-                .padding(6)
-                .into(),
-        )];
-        match a.mode {
+        let mut theme_rows = if keep {
+            vec![labelled(
+                "Mode",
+                pick_list(Some(a.mode), modes, ThemeMode::to_string)
+                    .on_select(Message::ThemeMode)
+                    .style(style::pick_list)
+                    .menu_style(style::menu)
+                    .width(Length::Fill)
+                    .padding(6)
+                    .into(),
+            )]
+        } else {
+            vec![]
+        };
+        match if keep { a.mode } else { ThemeMode::Configured } {
             ThemeMode::Single => {
                 theme_rows.push(labelled(
                     "Theme",
@@ -1570,20 +1872,57 @@ impl Settings {
                 ));
             }
             ThemeMode::Configured => {
-                theme_rows.push(text("Your theme configuration is managed in the config file. Choose a mode above to replace it.").style(theme::text::secondary).into());
+                theme_rows.push(text("Use the theme list controls below, or choose ordinary theme selection to replace these lists.").style(theme::text::secondary).into());
             }
         }
         theme_rows.push(column![
             action("Browse and download themes", Message::BrowseThemes),
             text("Theme selections preview throughout Halloy. Apply saves your choice; Revert restores the saved appearance.").size(12).style(theme::text::secondary)
         ].spacing(6).into());
+        theme_rows.push(
+            remaining_display::theme_lists(
+                &draft.display,
+                self.themes_for(theme_browser::Target::Single),
+                self.themes_for(theme_browser::Target::Light),
+                self.themes_for(theme_browser::Target::Dark),
+                display_error.as_ref(),
+            )
+            .map(Message::Display),
+        );
+        let mut font_rows = vec![
+            self.field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false),
+            column![self.mark_error(Field::LineHeight, self.mark_error(Field::FontSize, labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0))), text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
+        ];
+        for (index, field) in draft
+            .preferences
+            .fields
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| {
+                field.spec.area
+                    == data::config::settings::preferences::Area::Appearance
+            })
+        {
+            let error = self
+                .validation_error
+                .as_ref()
+                .filter(|error| {
+                    error.target == ValidationTarget::Preference(index)
+                })
+                .map(|error| error.message.as_str());
+            font_rows.push(preferences::control(index, field, error));
+        }
+        font_rows.push(
+            remaining_display::appearance_font(
+                &draft.display,
+                display_error.as_ref(),
+            )
+            .map(Message::Display),
+        );
         let form = column![
             text("Appearance").size(16).font(font::PRIMARY_BOLD.clone()),
             settings_group("Theme", theme_rows),
-            settings_group("Font", vec![
-                self.field("Font family", "Default (Iosevka Term)", &a.font_family, Field::FontFamily, false),
-                column![self.mark_error(Field::LineHeight, self.mark_error(Field::FontSize, labelled_width("Text size", row![container(input_field("13", &a.font_size, Field::FontSize, false)).width(88), text("Line height"), container(input_field("1.3", &a.line_height, Field::LineHeight, false)).width(88)].spacing(12).align_y(Alignment::Center).into(), 320.0))), text("Restart Halloy after applying font changes. Empty fields use Halloy’s defaults.").size(12).style(theme::text::secondary)].spacing(4).into(),
-            ]),
+            settings_group("Font", font_rows),
             settings_group("Layout", vec![
                 column![self.field("Chat interface scale", "1.0", &a.scale_factor, Field::Scale, false), text("Settings stays at its default scale so you can always adjust this value.").size(12).style(theme::text::secondary)].spacing(4).into(),
             ]),
@@ -1595,11 +1934,68 @@ impl Settings {
     }
 }
 
+impl Settings {
+    fn extra_confirmation(&self) -> bool {
+        if self.section == Section::Proxies {
+            self.proxy_state.confirmation_open()
+        } else if self.section == Section::Networks {
+            self.selected
+                .and_then(|index| self.network_states.get(index))
+                .is_some_and(remaining_networks::State::confirmation_open)
+        } else {
+            false
+        }
+    }
+    fn display_error(
+        &self,
+    ) -> Option<data::config::settings::remaining_display::ValidationError>
+    {
+        self.validation_error.as_ref().and_then(|error| match error.target { ValidationTarget::Display(target) => Some(data::config::settings::remaining_display::ValidationError { target, message: error.message.clone() }), _ => None })
+    }
+    fn general<'a>(
+        &'a self,
+        draft: &'a Draft,
+        area: data::config::settings::preferences::Area,
+    ) -> Element<'a, Message> {
+        let groups = draft.general.groups(area);
+        let group = groups
+            .get(self.preference_group)
+            .copied()
+            .unwrap_or("Application");
+        let error =
+            self.validation_error.as_ref().and_then(|error| {
+                match &error.target {
+                    ValidationTarget::General(target) => {
+                        Some(data::config::settings::remaining_general::Error {
+                            target: target.clone(),
+                            message: error.message.clone(),
+                        })
+                    }
+                    _ => None,
+                }
+            });
+        remaining_general::view(
+            &draft.general,
+            area,
+            group,
+            error.as_ref(),
+            &draft.display,
+            self.display_error().as_ref(),
+        )
+        .map(Message::General)
+    }
+}
+
 fn preference_area(
     section: Section,
 ) -> Option<data::config::settings::preferences::Area> {
     use data::config::settings::preferences::Area;
     match section {
+        Section::General => Some(Area::General),
+
+        Section::Commands => Some(Area::Commands),
+        Section::Previews => Some(Area::Previews),
+        Section::Transfers => Some(Area::Transfers),
         Section::Navigation => Some(Area::Navigation),
         Section::Chat => Some(Area::Chat),
         Section::Sidebar => Some(Area::Sidebar),
@@ -1809,11 +2205,17 @@ mod tests {
         );
         Settings {
             window: window::Id::unique(),
-            draft: Ok(draft),
+            draft: Ok(draft.clone()),
             section: Section::Appearance,
             preference_group: 0,
             rule_group: 0,
             confirm_rule_remove: false,
+            network_states: draft
+                .networks
+                .iter()
+                .map(|_| remaining_networks::State::default())
+                .collect(),
+            proxy_state: remaining_networks::State::default(),
             selected: None,
             themes: vec!["Ferra".into()],
             installed_themes,
@@ -2156,5 +2558,194 @@ mod tests {
             assert!(draft.rules.groups[settings.rule_group].removable);
             assert!(!draft.is_dirty());
         }
+    }
+    #[test]
+    fn extra_network_drafts_follow_add_remove_and_validation() {
+        use data::config::settings::remaining_networks::Part;
+        let mut settings = settings("");
+        let _ = settings.update(Message::Add, None);
+        assert_eq!(settings.network_states.len(), 1);
+        let _ = settings
+            .update(Message::Edit(Field::Server, "127.0.0.1".into()), None);
+        let _ =
+            settings.update(Message::Edit(Field::Nickname, "qa".into()), None);
+        let draft = settings.draft.as_ref().unwrap();
+        let index = draft.network_extras[0]
+            .fields
+            .iter()
+            .position(|field| field.path == vec![Part::Key("ping_time".into())])
+            .unwrap();
+        let _ = settings.update(
+            Message::NetworkExtra(
+                0,
+                remaining_networks::Message::Edit(index, Some("0".into())),
+            ),
+            None,
+        );
+        let _ = settings.update(Message::Section(Section::General), None);
+        let _ = settings.update(Message::Apply, None);
+        assert_eq!(settings.section, Section::Networks);
+        assert!(matches!(
+            settings.validation_error.as_ref().unwrap().target,
+            ValidationTarget::NetworkExtra { index: 0, .. }
+        ));
+        let _ = settings.update(
+            Message::NetworkExtra(
+                0,
+                remaining_networks::Message::Edit(index, Some("60".into())),
+            ),
+            None,
+        );
+        assert!(settings.validation_error.is_none());
+        let _ = settings.update(Message::Remove, None);
+        let _ = settings.update(Message::ConfirmRemove, None);
+        assert!(settings.network_states.is_empty());
+        assert!(settings.draft.as_ref().unwrap().network_extras.is_empty());
+    }
+
+    #[test]
+    fn ordinary_and_random_theme_methods_use_the_last_explicit_selection() {
+        use data::config::settings::remaining_display::ThemeListMode;
+        let mut settings = settings("theme=['Ferra']\n");
+        let _ = settings.update(
+            Message::Display(remaining_display::Event::ThemeMode(
+                ThemeListMode::Random,
+            )),
+            None,
+        );
+        assert_eq!(
+            settings.draft.as_ref().unwrap().appearance.mode,
+            ThemeMode::Configured
+        );
+        let _ = settings.update(Message::Theme("Ferra".into()), None);
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(draft.display.themes.mode, ThemeListMode::Keep);
+        assert_eq!(
+            Draft::parse(draft.render().unwrap())
+                .unwrap()
+                .appearance
+                .mode,
+            ThemeMode::Single
+        );
+        let _ = settings.update(
+            Message::Display(remaining_display::Event::ThemeMode(
+                ThemeListMode::Random,
+            )),
+            None,
+        );
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(
+            Draft::parse(draft.render().unwrap())
+                .unwrap()
+                .appearance
+                .mode,
+            ThemeMode::Configured
+        );
+    }
+
+    #[test]
+    fn pane_preset_keeps_image_and_message_actions_valid() {
+        let mut settings = settings("");
+        let _ = settings.update(Message::ReuseCurrentPane, None);
+        assert!(settings.draft.as_ref().unwrap().render().is_ok());
+    }
+    #[test]
+    fn every_structured_editor_has_a_reachable_group() {
+        use data::config::settings::preferences::Area;
+        let settings = settings("");
+        let draft = settings.draft.as_ref().unwrap();
+        for (area, group) in
+            draft
+                .display
+                .filters
+                .iter()
+                .map(|filter| (filter.area, filter.group))
+                .chain(draft.display.lists.iter().filter_map(|list| {
+                    list.area.map(|area| (area, list.group))
+                }))
+                .chain(
+                    draft
+                        .display
+                        .opacities
+                        .iter()
+                        .map(|opacity| (opacity.area, opacity.group)),
+                )
+                .chain(
+                    draft
+                        .display
+                        .repeats
+                        .iter()
+                        .map(|repeat| (repeat.area, repeat.group)),
+                )
+        {
+            assert!(
+                preferences::groups(draft, area).contains(&group),
+                "{area:?}: {group}"
+            );
+        }
+        assert!(
+            preferences::groups(draft, Area::Sidebar)
+                .contains(&"Unread indicators")
+        );
+    }
+
+    #[test]
+    fn child_confirmation_blocks_navigation_and_quit_cancels_it_first() {
+        use data::config::settings::remaining_networks::Rows;
+        let mut settings = settings(
+            "[servers.qa]\nserver='127.0.0.1'\nnickname='qa'\nautoconnect=false\n[servers.qa.filters]\nignore=['fixture']\n",
+        );
+        settings.section = Section::Networks;
+        settings.selected = Some(0);
+        let path = settings.draft.as_ref().unwrap().network_extras[0]
+            .collections
+            .iter()
+            .find(|collection| collection.kind == Rows::Ignore)
+            .unwrap()
+            .entries[0]
+            .path
+            .clone();
+        let _ = settings.update(
+            Message::NetworkExtra(0, remaining_networks::Message::Remove(path)),
+            None,
+        );
+        assert!(settings.extra_confirmation());
+        let _ = settings.update(Message::Section(Section::General), None);
+        let _ = settings.update(Message::Apply, None);
+        assert_eq!(settings.section, Section::Networks);
+        assert!(!settings.saving);
+        let (_, event) = settings.update(Message::Quit, None);
+        assert!(event.is_none());
+        assert!(!settings.extra_confirmation());
+        assert!(!settings.confirm_close);
+        assert!(!settings.draft.as_ref().unwrap().is_dirty());
+    }
+    #[test]
+    fn list_theme_selection_previews_without_staging_an_ordinary_theme() {
+        use data::config::settings::remaining_display::ThemeListMode;
+        let mut settings = settings("theme='Ferra'\n");
+        settings.installed_themes.push(data::Theme::new(
+            "Other".into(),
+            data::appearance::theme::Styles::default(),
+        ));
+        let _ = settings.update(
+            Message::Display(remaining_display::Event::ThemeMode(
+                ThemeListMode::Random,
+            )),
+            None,
+        );
+        let _ = settings.update(
+            Message::Display(remaining_display::Event::ThemeValue(
+                remaining_display::ThemeSlot::Random,
+                0,
+                "Other".into(),
+            )),
+            None,
+        );
+        assert!(settings.preview.is_some());
+        let draft = settings.draft.as_ref().unwrap();
+        assert_eq!(draft.appearance.mode, ThemeMode::Configured);
+        assert_eq!(draft.appearance.theme, "Ferra");
+        assert_eq!(draft.display.themes.random, ["Other"]);
     }
 }

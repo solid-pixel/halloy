@@ -6,6 +6,11 @@ use super::{child_table, set};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Area {
+    General,
+    Appearance,
+    Commands,
+    Previews,
+    Transfers,
     Navigation,
     Chat,
     Sidebar,
@@ -1162,6 +1167,11 @@ pub fn schema() -> Vec<Spec> {
             _ => &[],
         };
     }
+    specs.extend(super::remaining_media::schema(
+        Area::Previews,
+        Area::Transfers,
+    ));
+    super::remaining_display::extend_schema(&mut specs, Some(Area::Appearance));
     specs
 }
 
@@ -1298,9 +1308,8 @@ impl Preferences {
     }
     pub fn reuse_current_pane(&mut self) {
         for field in &mut self.fields {
-            if field.spec.path.starts_with("actions.")
+            if matches!(field.spec.kind, Kind::Choice(choices) if choices.iter().any(|choice| choice.value == "\"replace-pane\""))
                 && field.spec.path != "actions.sidebar.focused_buffer"
-                && field.spec.path != "actions.sidebar.cycle"
             {
                 field.value = "\"replace-pane\"".into();
             }
@@ -1343,6 +1352,7 @@ impl Preferences {
                 parent = child_table(parent, part)?;
             }
             if let Some(item) = item {
+                complete_brackets(parent, &field.write_path);
                 set(parent, key, item);
             } else {
                 parent.remove(key);
@@ -1393,7 +1403,7 @@ impl Field {
                     return Ok(None);
                 }
                 self.value.parse::<i64>().ok().filter(|value| (min..=max).contains(value)).map(value).map(Some)
-                    .ok_or_else(|| format!("{label} must be a whole number between {min} and {max}."))
+                    .ok_or_else(|| if max == i64::MAX && min == 0 { format!("{label} must be a non-negative whole number.") } else { format!("{label} must be a whole number between {min} and {max}.") })
             }
             Kind::Float { min, max, optional } => {
                 if optional && self.value.is_empty() {
@@ -1418,6 +1428,21 @@ impl Field {
                     array.push(i64::from(item));
                 }
                 Ok(Some(value(array)))
+            }
+        }
+    }
+}
+
+/// Brackets are a required pair in the runtime model; initialize only the
+/// missing side when the first override is introduced.
+pub(super) fn complete_brackets(parent: &mut dyn TableLike, path: &str) {
+    if path
+        .rsplit_once('.')
+        .is_some_and(|(parent, _)| parent.ends_with(".brackets"))
+    {
+        for key in ["left", "right"] {
+            if !parent.contains_key(key) {
+                set(parent, key, value(""));
             }
         }
     }
@@ -1453,6 +1478,17 @@ mod tests {
             };
             for option in values {
                 let mut settings = settings.clone();
+                if field.spec.path == "file_transfer.auto_accept.enabled" {
+                    settings
+                        .media
+                        .fields
+                        .iter_mut()
+                        .find(|field| {
+                            field.path == "file_transfer.save_directory"
+                        })
+                        .unwrap()
+                        .value = "/tmp/halloy-transfer-test".into();
+                }
                 let target = settings
                     .preferences
                     .fields

@@ -42,6 +42,7 @@ pub struct Group {
     pub area: Area,
     pub title: String,
     pub fields: Vec<Field>,
+    pub conditions: Option<super::remaining_display::DisplayEditors>,
     pub removable: bool,
     pub removed: bool,
     path: Vec<String>,
@@ -268,6 +269,10 @@ impl Group {
         self.removed
             || self.original.is_none() && self.removable
             || self.fields.iter().any(Field::changed)
+            || self
+                .conditions
+                .as_ref()
+                .is_some_and(super::remaining_display::DisplayEditors::is_dirty)
     }
     fn render(&self) -> Result<Item, (usize, String)> {
         if !self.changed()
@@ -392,8 +397,46 @@ impl Group {
                 );
             }
         }
+        if let Some(conditions) = &self.conditions
+            && conditions.is_dirty()
+        {
+            let mut document = DocumentMut::new();
+            let table = item.as_table_like().unwrap();
+            for (key, value) in table.iter() {
+                document
+                    .as_table_mut()
+                    .insert_formatted(table.key(key).unwrap(), value.clone());
+            }
+            conditions
+                .render_into(&mut document)
+                .map_err(|message| (0, message))?;
+            for filter in
+                conditions.filters.iter().filter(|filter| filter.is_dirty())
+            {
+                if let Some(value) = document.remove(&filter.path) {
+                    set(item.as_table_like_mut().unwrap(), &filter.path, value);
+                }
+            }
+        }
         Ok(item)
     }
+}
+
+fn condition_editor(
+    source: &Item,
+    fields: &[Field],
+) -> Option<super::remaining_display::DisplayEditors> {
+    fields
+        .iter()
+        .any(|field| {
+            field.path.first().is_some_and(|key| {
+                matches!(key.as_str(), "include" | "exclude")
+            })
+        })
+        .then(|| {
+            super::remaining_display::DisplayEditors::conditions(source)
+                .expect("validated conditions")
+        })
 }
 
 fn conditions(fields: &mut Vec<Field>, source: &Item) {
@@ -483,6 +526,7 @@ fn notification(
     Group {
         area: Area::Notifications,
         title,
+        conditions: condition_editor(source, &fields),
         fields,
         removable: channel,
         removed: false,
@@ -520,6 +564,7 @@ fn highlight(original: Option<Item>, number: usize, regex: bool) -> Group {
     Group {
         area: Area::Highlights,
         title: format!("Rule {number}"),
+        conditions: condition_editor(source, &fields),
         fields,
         removable: true,
         removed: false,
@@ -571,6 +616,7 @@ impl Rules {
         groups.push(Group {
             area: Area::Highlights,
             title: "Nickname".into(),
+            conditions: condition_editor(source, &fields),
             fields,
             removable: false,
             removed: false,
@@ -609,7 +655,7 @@ impl Rules {
                 $(let default = display_list(&defaults.$key.iter().map(|k|k.as_config_string().replace('↑',"up").replace('↓',"down").replace('←',"left").replace('→',"right")).collect::<Vec<_>>());
                 let path = if stringify!($key) == "highlights" && keyboard.as_table_like().is_some_and(|t| !t.contains_key("highlights") && t.contains_key("highlight")) {"highlight"} else {stringify!($key)};
                 fields.push(Field::new(&stringify!($key).replace('_'," "),path,Kind::Binding,&default,&keyboard));)+
-                groups.push(Group{area:Area::Keyboard,title:$title.into(),fields,removable:false,removed:false,path:vec!["keyboard".into()],original:Some(keyboard.clone()),highlight:false});
+                groups.push(Group{conditions:None,area:Area::Keyboard,title:$title.into(),fields,removable:false,removed:false,path:vec!["keyboard".into()],original:Some(keyboard.clone()),highlight:false});
             }};
         }
         keys!(
